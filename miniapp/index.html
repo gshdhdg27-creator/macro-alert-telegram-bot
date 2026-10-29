@@ -7,46 +7,44 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-<script>tailwind.config={theme:{extend:{colors:{dark:{950:'#0a0a0b',900:'#111113',800:'#1a1a1e',700:'#242428',600:'#2e2e33'},gold:{400:'#f5c542',500:'#e8b923'},accent:{green:'#34d399',red:'#f87171'}}}}}</script>
+<script>tailwind.config={theme:{extend:{colors:{dark:{950:'#0a0a0b',900:'#111113',800:'#1a1a1e',600:'#2e2e33'},gold:{400:'#f5c542',500:'#e8b923'},accent:{green:'#34d399',red:'#f87171'}}}}}</script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{font-family:Inter,system-ui,sans-serif;background:#0a0a0b;color:#f4f4f5;margin:0;overscroll-behavior:none}
+body{font-family:Inter,system-ui,sans-serif;background:#0a0a0b;color:#f4f4f5;margin:0}
 .card{background:linear-gradient(145deg,#1a1a1e,#141416);border:1px solid rgba(255,255,255,.06)}
 .tab-active{background:linear-gradient(135deg,#e8b923,#d4a017);color:#0a0a0b;font-weight:600}
 .tf-active{background:#e8b923;color:#0a0a0b;font-weight:600}
 .price-up{color:#34d399}.price-down{color:#f87171}
-#chart-container{width:100%;flex:1;min-height:280px;height:280px}
-.scrollbar-hide::-webkit-scrollbar{display:none}
+#chart-container{width:100%;height:300px;min-height:300px}
 .term-row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}
 .term-label{color:#71717a}.term-val{font-family:ui-monospace,monospace;color:#e4e4e7}
 </style>
 </head>
 <body class="min-h-screen bg-dark-950 text-zinc-100">
 <div id="app-main">
-<header class="sticky top-0 z-50 bg-dark-950/90 backdrop-blur-xl border-b border-white/5 px-4 pt-3 pb-3">
+<header class="sticky top-0 z-50 bg-dark-950/90 backdrop-blur border-b border-white/5 px-4 pt-3 pb-3">
 <div class="flex items-center justify-between">
 <div class="flex items-center gap-2.5">
 <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-500 flex items-center justify-center text-dark-950 font-bold text-lg">M</div>
 <div><h1 class="text-[15px] font-semibold">Macro Alert</h1><p class="text-[11px] text-zinc-500">Real-time exchange</p></div>
 </div>
-<button id="btn-notif" onclick="toggleNotif()" class="px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300">🔔 Вкл</button>
+<button id="btn-notif" onclick="toggleNotif()" class="px-3 py-1.5 rounded-full text-xs bg-dark-800 border border-white/10">🔔 Вкл</button>
 </div>
 </header>
 <main class="px-4 pt-4 pb-28">
 <div class="flex gap-1 p-1 bg-dark-900 rounded-2xl mb-5">
 <button onclick="switchTab('home')" id="tab-home" class="tab-active flex-1 py-2 rounded-xl text-xs">Главная</button>
 <button onclick="switchTab('news')" id="tab-news" class="flex-1 py-2 rounded-xl text-xs text-zinc-400">Новости</button>
-<button onclick="switchTab('calendar')" id="tab-calendar" class="flex-1 py-2 rounded-xl text-xs text-zinc-400">Календарь</button>
 <button onclick="switchTab('settings')" id="tab-settings" class="flex-1 py-2 rounded-xl text-xs text-zinc-400">Настройки</button>
 </div>
 <div id="view-home">
 <div class="card rounded-2xl p-4 mb-4">
 <div class="flex items-center justify-between mb-2">
 <span class="text-xs text-zinc-500 uppercase">Статус</span>
-<span class="flex items-center gap-1.5 text-xs text-accent-green"><span class="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse"></span> Онлайн</span>
+<span class="text-xs text-accent-green">● Онлайн</span>
 </div>
-<p class="text-sm text-zinc-300">Котировки с бирж · Forex Factory</p>
+<p class="text-sm text-zinc-300">13 активов · Binance · Forex Factory</p>
 <p id="home-notif-status" class="text-xs text-zinc-500 mt-2">Уведомления: включены</p>
 </div>
 <h2 class="text-xs font-medium text-zinc-500 uppercase mb-3">Активы</h2>
@@ -55,54 +53,37 @@ body{font-family:Inter,system-ui,sans-serif;background:#0a0a0b;color:#f4f4f5;mar
 <div id="view-news" class="hidden">
 <div class="flex items-center justify-between mb-3">
 <div><h2 class="text-sm font-semibold">Forex Factory</h2><p class="text-[11px] text-zinc-500" id="news-updated">Загрузка…</p></div>
-<button onclick="loadNews(true)" class="px-3 py-1.5 rounded-lg text-xs bg-dark-800 text-zinc-300">Обновить</button>
+<button onclick="loadNews(true)" class="px-3 py-1.5 rounded-lg text-xs bg-dark-800">Обновить</button>
 </div>
-<div class="card rounded-2xl p-3 mb-3 flex items-center justify-between">
-<div><p class="text-sm font-medium">Уведомления о новостях</p></div>
-<button id="toggle-news-notif" onclick="toggleNotif()" class="w-12 h-7 rounded-full bg-accent-green relative"><span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow" style="transform:translateX(20px)"></span></button>
-</div>
-<div class="flex gap-1.5 mb-3 overflow-x-auto scrollbar-hide">
+<div class="flex gap-1.5 mb-3">
 <button onclick="filterNews('all',this)" class="news-filter tab-active px-3 py-1 rounded-full text-xs">Все</button>
 <button onclick="filterNews('High',this)" class="news-filter px-3 py-1 rounded-full text-xs text-zinc-400 bg-dark-800">High</button>
 <button onclick="filterNews('Medium',this)" class="news-filter px-3 py-1 rounded-full text-xs text-zinc-400 bg-dark-800">Medium</button>
-<button onclick="filterNews('Low',this)" class="news-filter px-3 py-1 rounded-full text-xs text-zinc-400 bg-dark-800">Low</button>
 </div>
 <div id="news-list" class="space-y-2.5"><p class="text-sm text-zinc-500 text-center py-8">Загрузка…</p></div>
 </div>
-<div id="view-calendar" class="hidden">
-<p class="text-sm text-zinc-400 mb-3">Полный календарь — вкладка <b>Новости</b>.</p>
-<button onclick="switchTab('news')" class="w-full py-3 rounded-xl tab-active text-sm">Открыть Новости</button>
-</div>
 <div id="view-settings" class="hidden">
-<div class="card rounded-2xl p-4 mb-4 space-y-4">
+<div class="card rounded-2xl p-4 mb-4">
 <div class="flex items-center justify-between">
 <div><p class="text-sm font-medium">Уведомления</p></div>
 <button id="toggle-settings-notif" onclick="toggleNotif()" class="w-12 h-7 rounded-full bg-accent-green relative"><span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow" style="transform:translateX(20px)"></span></button>
 </div>
-<div class="flex items-center justify-between">
-<div><p class="text-sm font-medium">Только High Impact</p></div>
-<button id="toggle-high" onclick="toggleHigh()" class="w-12 h-7 rounded-full bg-dark-600 relative"><span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow"></span></button>
 </div>
-</div>
-<h2 class="text-xs font-medium text-zinc-500 uppercase mb-3">Подписки</h2>
 <div class="flex flex-wrap gap-2" id="subscribe-chips"></div>
 </div>
 </main>
 </div>
 <div id="app-asset" class="hidden fixed inset-0 z-50 bg-dark-950 flex flex-col">
-<div class="px-4 pt-3 pb-2 border-b border-white/5 flex items-center gap-3 shrink-0">
+<div class="px-4 pt-3 pb-2 border-b border-white/5 flex items-center gap-3">
 <button onclick="closeAsset()" class="w-9 h-9 rounded-xl bg-dark-800 flex items-center justify-center text-lg">←</button>
-<div class="flex-1 min-w-0">
-<div class="flex items-center gap-2"><span id="asset-emoji" class="text-xl"></span><span id="asset-symbol" class="font-semibold text-[15px]"></span>
-<span id="asset-exchange" class="text-[10px] px-1.5 py-0.5 rounded bg-dark-800 text-zinc-400">—</span></div>
-<p id="asset-fullname" class="text-[11px] text-zinc-500 truncate"></p>
+<div class="flex-1">
+<div class="flex items-center gap-2"><span id="asset-emoji" class="text-xl"></span><span id="asset-symbol" class="font-semibold"></span>
+<span id="asset-exchange" class="text-[10px] px-1.5 py-0.5 rounded bg-dark-800 text-zinc-400"></span></div>
+<p id="asset-fullname" class="text-[11px] text-zinc-500"></p>
 </div>
-<div class="text-right">
-<p id="asset-price" class="font-mono font-semibold text-[15px]">—</p>
-<p id="asset-change" class="text-xs font-medium">—</p>
+<div class="text-right"><p id="asset-price" class="font-mono font-semibold">—</p><p id="asset-change" class="text-xs">—</p></div>
 </div>
-</div>
-<div class="px-3 py-2 flex gap-1.5 overflow-x-auto scrollbar-hide border-b border-white/5 shrink-0">
+<div class="px-3 py-2 flex gap-1.5 border-b border-white/5 overflow-x-auto">
 <button onclick="setTf(this,'1m')" class="tf-btn tf-active px-2.5 py-1 rounded-lg text-xs">1m</button>
 <button onclick="setTf(this,'5m')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800">5m</button>
 <button onclick="setTf(this,'15m')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800">15m</button>
@@ -110,26 +91,55 @@ body{font-family:Inter,system-ui,sans-serif;background:#0a0a0b;color:#f4f4f5;mar
 <button onclick="setTf(this,'4h')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800">4h</button>
 <button onclick="setTf(this,'1d')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800">1D</button>
 </div>
-<div class="px-3 py-2 flex gap-2 border-b border-white/5 shrink-0">
+<div class="px-3 py-2 flex gap-2 border-b border-white/5">
 <button onclick="setChartType('candles')" id="btn-candles" class="px-3 py-1 rounded-lg text-xs font-medium bg-gold-500 text-dark-950">Свечи</button>
 <button onclick="setChartType('line')" id="btn-line" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-zinc-400">Линия</button>
-<div class="flex-1"></div>
-<span id="live-indicator" class="text-[11px] text-zinc-500 self-center">● Live</span>
+<span id="live-indicator" class="ml-auto text-[11px] text-zinc-500 self-center">● Live</span>
 </div>
 <div id="chart-container"></div>
-<div class="shrink-0 border-t border-white/10 bg-dark-900/80 px-4 py-3">
+<div class="border-t border-white/10 bg-dark-900/80 px-4 py-3">
 <div class="grid grid-cols-2 gap-x-6 gap-y-1">
 <div class="term-row"><span class="term-label">Open</span><span class="term-val" id="stat-open">—</span></div>
-<div class="term-row"><span class="term-label">High</span><span class="term-val text-accent-green" id="stat-high">—</span></div>
-<div class="term-row"><span class="term-label">Low</span><span class="term-val text-accent-red" id="stat-low">—</span></div>
+<div class="term-row"><span class="term-label">High</span><span class="term-val" id="stat-high">—</span></div>
+<div class="term-row"><span class="term-label">Low</span><span class="term-val" id="stat-low">—</span></div>
 <div class="term-row"><span class="term-label">Close</span><span class="term-val" id="stat-close">—</span></div>
-<div class="term-row"><span class="term-label">Change</span><span class="term-val" id="stat-change">—</span></div>
 <div class="term-row"><span class="term-label">Change %</span><span class="term-val" id="stat-change-pct">—</span></div>
-<div class="term-row"><span class="term-label">Volume</span><span class="term-val" id="stat-vol">—</span></div>
 <div class="term-row"><span class="term-label">Source</span><span class="term-val" id="stat-source">—</span></div>
 </div>
 </div>
 </div>
-<script src="./app.js"></script>
+<script>
+const tg=window.Telegram&&window.Telegram.WebApp;if(tg){tg.ready();tg.expand();tg.setHeaderColor('#0a0a0b');tg.setBackgroundColor('#0a0a0b');}
+const ASSETS=[{key:'btc',emoji:'🪙',name:'BTC',full:'Bitcoin',binance:'BTCUSDT',base:80000,exchange:'Binance'},{key:'eth',emoji:'💎',name:'ETH',full:'Ethereum',binance:'ETHUSDT',base:3500,exchange:'Binance'},{key:'xauusd',emoji:'🟡',name:'XAUUSD',full:'Золото',binance:null,base:2650,exchange:'Market'},{key:'eurusd',emoji:'💶',name:'EURUSD',full:'EUR/USD',binance:null,fx:'EUR',base:1.08,exchange:'FX'},{key:'gbpusd',emoji:'💷',name:'GBPUSD',full:'GBP/USD',binance:null,fx:'GBP',base:1.30,exchange:'FX'},{key:'usdjpy',emoji:'💴',name:'USDJPY',full:'USD/JPY',binance:null,fx:'JPY',base:150,exchange:'FX',invert:true},{key:'nasdaq',emoji:'📈',name:'NASDAQ',full:'NASDAQ 100',binance:null,base:20500,exchange:'Index'},{key:'sp500',emoji:'📊',name:'S&P 500',full:'S&P 500',binance:null,base:5800,exchange:'Index'},{key:'dxy',emoji:'💵',name:'DXY',full:'Dollar Index',binance:null,base:104,exchange:'Index'},{key:'oil',emoji:'🛢',name:'OIL',full:'Brent',binance:null,base:78,exchange:'Commodities'},{key:'agro',emoji:'🌾',name:'AGRO',full:'Commodities',binance:null,base:580,exchange:'Commodities'},{key:'tesla',emoji:'🚗',name:'TSLA',full:'Tesla',binance:null,base:250,exchange:'US'},{key:'ai_tech',emoji:'🤖',name:'NVDA',full:'AI & Chips',binance:null,base:140,exchange:'US'}];
+let notifOn=true,subscribed=Object.fromEntries(ASSETS.map(a=>[a.key,true]));
+let currentAsset=null,chart=null,candleSeries=null,lineSeries=null,currentTf='1m';
+let priceInterval=null,candleData=[],lastCandle=null,allNews=[],newsFilter='all',newsTimer=null,sessionOpen=null;
+function renderAssets(){document.getElementById('assets-grid').innerHTML=ASSETS.map(a=>'<button onclick="openAsset(\''+a.key+'\')" class="card rounded-2xl p-3.5 text-left"><div class="text-2xl mb-1">'+a.emoji+'</div><div class="text-sm font-semibold">'+a.name+'</div><div class="text-[11px] text-zinc-500">'+a.full+'</div><div class="text-[10px] text-zinc-600 mt-1">'+a.exchange+'</div></button>').join('');}
+function renderChips(){document.getElementById('subscribe-chips').innerHTML=ASSETS.map(a=>'<button onclick="toggleSub(\''+a.key+'\')" class="px-3 py-1.5 rounded-full text-xs '+(subscribed[a.key]?'bg-gold-500/15 text-gold-400 border border-gold-500/40':'bg-dark-800 text-zinc-400')+'">'+a.emoji+' '+a.name+'</button>').join('');}
+function switchTab(tab){['home','news','settings'].forEach(t=>{var v=document.getElementById('view-'+t);if(v)v.classList.toggle('hidden',t!==tab);var b=document.getElementById('tab-'+t);if(b)b.className=t===tab?'tab-active flex-1 py-2 rounded-xl text-xs':'flex-1 py-2 rounded-xl text-xs text-zinc-400';});if(tab==='news'){loadNews();if(newsTimer)clearInterval(newsTimer);newsTimer=setInterval(loadNews,45000);}else if(newsTimer){clearInterval(newsTimer);newsTimer=null;}}
+function toggleNotif(){notifOn=!notifOn;document.getElementById('btn-notif').textContent=notifOn?'🔔 Вкл':'🔇 Выкл';document.getElementById('home-notif-status').textContent='Уведомления: '+(notifOn?'включены':'выключены');try{localStorage.setItem('macro_notif',notifOn?'1':'0');}catch(e){}}
+function toggleSub(key){subscribed[key]=!subscribed[key];renderChips();}
+async function loadNews(){var list=document.getElementById('news-list');try{var res=await fetch('https://pipatlas.com/api/calendar',{cache:'no-store'});var data=await res.json();allNews=data.events||[];document.getElementById('news-updated').textContent=allNews.length+' событий';renderNews();}catch(e){list.innerHTML='<p class="text-sm text-red-400 text-center py-6">Ошибка загрузки</p>';}}
+function filterNews(level,btn){newsFilter=level;document.querySelectorAll('.news-filter').forEach(b=>b.className='news-filter px-3 py-1 rounded-full text-xs text-zinc-400 bg-dark-800');if(btn)btn.className='news-filter tab-active px-3 py-1 rounded-full text-xs';renderNews();}
+function renderNews(){var list=document.getElementById('news-list');var items=newsFilter==='all'?allNews:allNews.filter(e=>e.impact===newsFilter);if(!items.length){list.innerHTML='<p class="text-sm text-zinc-500 text-center py-8">Нет событий</p>';return;}items=items.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));list.innerHTML=items.map(e=>{var d=new Date(e.date);var t=d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});var stars=e.impact==='High'?'⭐️⭐️⭐️':e.impact==='Medium'?'⭐️⭐️':'⭐️';return '<div class="card rounded-2xl p-3.5"><div class="flex gap-2 mb-1 text-xs"><span>'+stars+'</span><span class="text-zinc-400">'+(e.currency||'')+'</span><span class="ml-auto text-zinc-500">'+t+'</span></div><p class="text-sm font-semibold">'+(e.name||'')+'</p></div>';}).join('');}
+function openAsset(key){currentAsset=ASSETS.find(a=>a.key===key);if(!currentAsset)return;document.getElementById('app-main').classList.add('hidden');document.getElementById('app-asset').classList.remove('hidden');document.getElementById('asset-emoji').textContent=currentAsset.emoji;document.getElementById('asset-symbol').textContent=currentAsset.name;document.getElementById('asset-fullname').textContent=currentAsset.full;document.getElementById('asset-exchange').textContent=currentAsset.exchange;sessionOpen=currentAsset.base;if(tg){tg.BackButton.show();tg.BackButton.onClick(closeAsset);}initChart();loadChartData();startLive();}
+function closeAsset(){stopLive();if(chart){chart.remove();chart=null;candleSeries=null;lineSeries=null;}document.getElementById('app-asset').classList.add('hidden');document.getElementById('app-main').classList.remove('hidden');if(tg)tg.BackButton.hide();}
+function sanitize(data){if(!data||!data.length)return[];var out=[],lastT=-1;for(var i=0;i<data.length;i++){var c=data[i],t=Math.floor(Number(c.time));if(!t||t<=lastT)continue;var o=+c.open,h=+c.high,l=+c.low,cl=+c.close;if(!(o>0&&h>0&&l>0&&cl>0))continue;if(h<Math.max(o,cl))h=Math.max(o,cl);if(l>Math.min(o,cl))l=Math.min(o,cl);out.push({time:t,open:o,high:h,low:l,close:cl});lastT=t;}return out;}
+function initChart(){var el=document.getElementById('chart-container');el.innerHTML='';var h=300;el.style.height=h+'px';chart=LightweightCharts.createChart(el,{width:el.clientWidth||window.innerWidth,height:h,layout:{background:{type:'solid',color:'#0a0a0b'},textColor:'#71717a',fontSize:11},grid:{vertLines:{color:'rgba(255,255,255,0.04)'},horzLines:{color:'rgba(255,255,255,0.04)'}},rightPriceScale:{borderColor:'rgba(255,255,255,0.08)'},timeScale:{borderColor:'rgba(255,255,255,0.08)',timeVisible:true,rightOffset:5,barSpacing:7},handleScroll:{vertTouchDrag:false}});candleSeries=chart.addCandlestickSeries({upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'});lineSeries=chart.addLineSeries({color:'#e8b923',lineWidth:2,visible:false});}
+function tfSec(tf){return {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400}[tf]||60;}
+function tfBin(tf){return {'1m':'1m','5m':'5m','15m':'15m','1h':'1h','4h':'4h','1d':'1d'}[tf]||'1m';}
+function fmt(p){if(p>=1000)return p.toFixed(1);if(p>=10)return p.toFixed(2);if(p>=1)return p.toFixed(4);return p.toFixed(5);}
+function genCandles(base,n,sec){var now=Math.floor(Date.now()/1000),aligned=Math.floor(now/sec)*sec;var data=[],price=base*(0.99+Math.random()*0.02),trend=0;for(var i=n;i>=0;i--){var t=aligned-i*sec,o=price;trend=trend*0.95+(Math.random()-0.5)*0.0004;var cl=o+o*trend*(0.5+Math.random());var wr=Math.abs(cl-o)*(0.5+Math.random())+o*0.0003;var h=Math.max(o,cl)+Math.random()*wr,l=Math.min(o,cl)-Math.random()*wr;var d=base>=100?2:base>=1?4:5;data.push({time:t,open:+o.toFixed(d),high:+h.toFixed(d),low:+l.toFixed(d),close:+cl.toFixed(d)});price=cl;}return data;}
+async function loadBinance(symbol,interval,limit){try{var res=await fetch('https://data-api.binance.vision/api/v3/klines?symbol='+symbol+'&interval='+interval+'&limit='+limit);if(!res.ok)return null;var raw=await res.json();if(!Array.isArray(raw)||raw.length<5)return null;return sanitize(raw.map(k=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]})));}catch(e){return null;}}
+async function loadChartData(){if(!currentAsset||!chart)return;var sec=tfSec(currentTf),n=120,data=null;document.getElementById('live-indicator').textContent='⏳…';if(currentAsset.binance){data=await loadBinance(currentAsset.binance,tfBin(currentTf),n);if(data&&data.length){currentAsset.base=data[data.length-1].close;document.getElementById('stat-source').textContent='Binance';document.getElementById('live-indicator').textContent='● Binance';document.getElementById('live-indicator').className='ml-auto text-[11px] text-accent-green self-center';}}if(!data||data.length<5){if(currentAsset.fx){try{var r=await fetch('https://fxapi.app/api/USD/'+currentAsset.fx+'.json');var j=await r.json();if(j&&j.rate>0)currentAsset.base=currentAsset.invert?(1/j.rate):j.rate;}catch(e){}}data=sanitize(genCandles(currentAsset.base,n,sec));document.getElementById('stat-source').textContent=currentAsset.exchange;document.getElementById('live-indicator').textContent='● Live';document.getElementById('live-indicator').className='ml-auto text-[11px] text-gold-400 self-center';}candleData=data;lastCandle=Object.assign({},data[data.length-1]);candleSeries.setData(candleData);lineSeries.setData(candleData.map(c=>({time:c.time,value:c.close})));sessionOpen=candleData[0].open;updateUI(lastCandle.close);updateStats(lastCandle,candleData.length>1?candleData[candleData.length-2].close:lastCandle.open);chart.timeScale().fitContent();}
+function updateUI(price){document.getElementById('asset-price').textContent=fmt(price);var pct=((price-sessionOpen)/sessionOpen*100);var el=document.getElementById('asset-change');el.textContent=(pct>=0?'+':'')+pct.toFixed(2)+'%';el.className='text-xs '+(pct>=0?'price-up':'price-down');}
+function updateStats(last,prev){document.getElementById('stat-open').textContent=fmt(last.open);document.getElementById('stat-high').textContent=fmt(last.high);document.getElementById('stat-low').textContent=fmt(last.low);document.getElementById('stat-close').textContent=fmt(last.close);var pct=((last.close-prev)/prev*100);var el=document.getElementById('stat-change-pct');el.textContent=(pct>=0?'+':'')+pct.toFixed(2)+'%';el.className='term-val '+(pct>=0?'text-accent-green':'text-accent-red');}
+function setTf(btn,tf){currentTf=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.className='tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800');btn.className='tf-btn tf-active px-2.5 py-1 rounded-lg text-xs';loadChartData();}
+function setChartType(type){if(type==='candles'){candleSeries.applyOptions({visible:true});lineSeries.applyOptions({visible:false});document.getElementById('btn-candles').className='px-3 py-1 rounded-lg text-xs font-medium bg-gold-500 text-dark-950';document.getElementById('btn-line').className='px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-zinc-400';}else{candleSeries.applyOptions({visible:false});lineSeries.applyOptions({visible:true});document.getElementById('btn-line').className='px-3 py-1 rounded-lg text-xs font-medium bg-gold-500 text-dark-950';document.getElementById('btn-candles').className='px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-zinc-400';}}
+function startLive(){stopLive();if(!lastCandle)return;function tick(price){if(!candleSeries||!lastCandle||!(price>0))return;currentAsset.base=price;updateUI(price);var sec=tfSec(currentTf),now=Math.floor(Date.now()/1000);var ct=Math.floor(now/sec)*sec;if(ct<lastCandle.time)ct=lastCandle.time;var d=price>=1000?2:price>=1?4:5;if(ct>lastCandle.time){lastCandle={time:ct,open:+price.toFixed(d),high:+price.toFixed(d),low:+price.toFixed(d),close:+price.toFixed(d)};candleData.push(lastCandle);}else{lastCandle.close=+price.toFixed(d);lastCandle.high=+Math.max(lastCandle.high,price).toFixed(d);lastCandle.low=+Math.min(lastCandle.low,price).toFixed(d);}try{candleSeries.update(lastCandle);lineSeries.update({time:lastCandle.time,value:lastCandle.close});updateStats(lastCandle,candleData.length>1?candleData[candleData.length-2].close:lastCandle.open);}catch(e){}}if(currentAsset.binance){priceInterval=setInterval(async()=>{try{var r=await fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol='+currentAsset.binance);var j=await r.json();if(j&&j.price)tick(+j.price);}catch(e){}},1500);}else{priceInterval=setInterval(()=>{if(!currentAsset)return;tick(currentAsset.base+(Math.random()-0.5)*currentAsset.base*0.0004);},800);}}
+function stopLive(){if(priceInterval){clearInterval(priceInterval);priceInterval=null;}}
+function boot(){try{if(localStorage.getItem('macro_notif')==='0')notifOn=false;document.getElementById('btn-notif').textContent=notifOn?'🔔 Вкл':'🔇 Выкл';document.getElementById('home-notif-status').textContent='Уведомления: '+(notifOn?'включены':'выключены');renderAssets();renderChips();}catch(e){document.getElementById('assets-grid').innerHTML='<p class="text-red-400 text-sm">'+e.message+'</p>';}}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+</script>
 </body>
 </html>
