@@ -6,348 +6,412 @@
   <title>Macro Alert</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            dark: {
-              950: '#0a0a0b',
-              900: '#111113',
-              800: '#1a1a1e',
-              700: '#242428',
-              600: '#2e2e33',
-            },
-            gold: {
-              400: '#f5c542',
-              500: '#e8b923',
-              600: '#d4a017',
-            },
-            accent: {
-              cyan: '#22d3ee',
-              green: '#34d399',
-              red: '#f87171',
-            }
+            dark: { 950: '#0a0a0b', 900: '#111113', 800: '#1a1a1e', 700: '#242428', 600: '#2e2e33' },
+            gold: { 400: '#f5c542', 500: '#e8b923', 600: '#d4a017' },
+            accent: { cyan: '#22d3ee', green: '#34d399', red: '#f87171' }
           },
-          fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-          }
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
         }
       }
     }
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { -webkit-tap-highlight-color: transparent; }
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: #0a0a0b;
-      color: #f4f4f5;
-      overscroll-behavior: none;
-    }
-    .card {
-      background: linear-gradient(145deg, #1a1a1e 0%, #141416 100%);
-      border: 1px solid rgba(255,255,255,0.06);
-      transition: all 0.2s ease;
-    }
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0b; color: #f4f4f5; overscroll-behavior: none; margin: 0; }
+    .card { background: linear-gradient(145deg, #1a1a1e 0%, #141416 100%); border: 1px solid rgba(255,255,255,0.06); transition: all 0.2s ease; }
     .card:active { transform: scale(0.98); }
-    .glow-gold {
-      box-shadow: 0 0 20px rgba(232, 185, 35, 0.15);
-    }
-    .tab-active {
-      background: linear-gradient(135deg, #e8b923 0%, #d4a017 100%);
-      color: #0a0a0b;
-      font-weight: 600;
-    }
-    .scrollbar-hide::-webkit-scrollbar { display: none; }
-    .asset-chip {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-    }
-    .asset-chip.active {
-      background: rgba(232, 185, 35, 0.15);
-      border-color: rgba(232, 185, 35, 0.4);
-      color: #f5c542;
-    }
+    .tab-active { background: linear-gradient(135deg, #e8b923 0%, #d4a017 100%); color: #0a0a0b; font-weight: 600; }
+    .tf-active { background: #e8b923; color: #0a0a0b; font-weight: 600; }
+    .asset-chip { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .asset-chip.active { background: rgba(232,185,35,0.15); border-color: rgba(232,185,35,0.4); color: #f5c542; }
     .impact-high { color: #f87171; }
     .impact-medium { color: #f5c542; }
-    .impact-low { color: #a1a1aa; }
+    #chart-container { width: 100%; height: 320px; position: relative; }
+    .price-up { color: #34d399; }
+    .price-down { color: #f87171; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body class="min-h-screen bg-dark-950 text-zinc-100">
-  <header class="sticky top-0 z-50 bg-dark-950/90 backdrop-blur-xl border-b border-white/5 px-4 pt-3 pb-3">
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2.5">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center text-dark-950 font-bold text-lg">M</div>
-        <div>
-          <h1 class="text-[15px] font-semibold tracking-tight">Macro Alert</h1>
-          <p class="text-[11px] text-zinc-500">Real-time macro & assets</p>
-        </div>
-      </div>
-      <button id="btn-quiet" onclick="toggleQuiet()" class="px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300">
-        🔔 Алерты
-      </button>
-    </div>
-  </header>
 
-  <main class="px-4 pt-4 pb-28">
-    <div class="flex gap-1.5 p-1 bg-dark-900 rounded-2xl mb-5">
-      <button onclick="switchTab('home')" id="tab-home" class="tab-active flex-1 py-2.5 rounded-xl text-sm transition-all">Главная</button>
-      <button onclick="switchTab('calendar')" id="tab-calendar" class="flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all">Календарь</button>
-      <button onclick="switchTab('settings')" id="tab-settings" class="flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all">Настройки</button>
-    </div>
-
-    <div id="view-home">
-      <div class="card rounded-2xl p-4 mb-4 glow-gold">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-xs text-zinc-500 uppercase tracking-wider">Статус</span>
-          <span class="flex items-center gap-1.5 text-xs text-accent-green">
-            <span class="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse"></span>
-            Онлайн
-          </span>
-        </div>
-        <p class="text-sm text-zinc-300">Мониторинг 13 активов + экономический календарь</p>
-      </div>
-
-      <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-0.5">Активы</h2>
-      <div class="grid grid-cols-2 gap-2.5 mb-6" id="assets-grid"></div>
-
-      <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-0.5">Последние алерты</h2>
-      <div class="space-y-2.5" id="alerts-list">
-        <div class="card rounded-2xl p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-xs font-medium impact-high">HIGH</span>
-                <span class="text-[11px] text-zinc-500">#XAUUSD #DXY</span>
-              </div>
-              <p class="text-sm font-medium leading-snug">ФРС сохранила ставку 5.50%</p>
-              <p class="text-xs text-zinc-500 mt-1.5">Пауэлл: не готовы снижать, пока инфляция не уверенно идёт к 2%</p>
-            </div>
-            <span class="text-[11px] text-zinc-600 whitespace-nowrap">14:32</span>
-          </div>
-        </div>
-        <div class="card rounded-2xl p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-xs font-medium impact-medium">MED</span>
-                <span class="text-[11px] text-zinc-500">#BTC</span>
-              </div>
-              <p class="text-sm font-medium leading-snug">BlackRock IBIT приток $420M</p>
-              <p class="text-xs text-zinc-500 mt-1.5">Крупнейший дневной приток за 3 недели</p>
-            </div>
-            <span class="text-[11px] text-zinc-600 whitespace-nowrap">12:18</span>
-          </div>
-        </div>
-        <div class="card rounded-2xl p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-xs font-medium impact-high">HIGH</span>
-                <span class="text-[11px] text-zinc-500">#NVDA #AI</span>
-              </div>
-              <p class="text-sm font-medium leading-snug">Nvidia отчиталась лучше ожиданий</p>
-              <p class="text-xs text-zinc-500 mt-1.5">Выручка $35.1B, data center +112% YoY</p>
-            </div>
-            <span class="text-[11px] text-zinc-600 whitespace-nowrap">вчера</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="view-calendar" class="hidden">
-      <div class="flex gap-2 mb-4 overflow-x-auto scrollbar-hide pb-1">
-        <button onclick="setPeriod(this, 'today')" class="period-btn tab-active px-4 py-2 rounded-full text-sm whitespace-nowrap">Сегодня</button>
-        <button onclick="setPeriod(this, 'tomorrow')" class="period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap">Завтра</button>
-        <button onclick="setPeriod(this, 'week')" class="period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap">Неделя</button>
-      </div>
-      <div class="space-y-3" id="calendar-list">
-        <div class="card rounded-2xl p-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-red-400 text-sm">⭐️⭐️⭐️</span>
-            <span class="text-xs font-medium text-zinc-400">US</span>
-            <span class="ml-auto text-[11px] text-zinc-500">15:30 MSK</span>
-          </div>
-          <p class="text-sm font-semibold">CPI (YoY)</p>
-          <div class="flex gap-4 mt-2.5 text-xs">
-            <div><span class="text-zinc-500">Actual</span><br><span class="font-mono text-zinc-200">—</span></div>
-            <div><span class="text-zinc-500">Forecast</span><br><span class="font-mono text-gold-400">2.5%</span></div>
-            <div><span class="text-zinc-500">Prev</span><br><span class="font-mono text-zinc-400">2.4%</span></div>
-          </div>
-        </div>
-        <div class="card rounded-2xl p-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-red-400 text-sm">⭐️⭐️⭐️</span>
-            <span class="text-xs font-medium text-zinc-400">US</span>
-            <span class="ml-auto text-[11px] text-zinc-500">15:30 MSK</span>
-          </div>
-          <p class="text-sm font-semibold">Non-Farm Payrolls</p>
-          <div class="flex gap-4 mt-2.5 text-xs">
-            <div><span class="text-zinc-500">Actual</span><br><span class="font-mono text-zinc-200">—</span></div>
-            <div><span class="text-zinc-500">Forecast</span><br><span class="font-mono text-gold-400">180K</span></div>
-            <div><span class="text-zinc-500">Prev</span><br><span class="font-mono text-zinc-400">254K</span></div>
-          </div>
-        </div>
-        <div class="card rounded-2xl p-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-gold-400 text-sm">⭐️⭐️</span>
-            <span class="text-xs font-medium text-zinc-400">EU</span>
-            <span class="ml-auto text-[11px] text-zinc-500">15:15 MSK</span>
-          </div>
-          <p class="text-sm font-semibold">ECB Interest Rate Decision</p>
-        </div>
-      </div>
-    </div>
-
-    <div id="view-settings" class="hidden">
-      <div class="card rounded-2xl p-4 mb-4">
-        <div class="flex items-center justify-between mb-4">
+  <div id="app-main">
+    <header class="sticky top-0 z-50 bg-dark-950/90 backdrop-blur-xl border-b border-white/5 px-4 pt-3 pb-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center text-dark-950 font-bold text-lg">M</div>
           <div>
-            <p class="text-sm font-medium">Только High Impact</p>
-            <p class="text-xs text-zinc-500 mt-0.5">Получать только самые важные новости</p>
+            <h1 class="text-[15px] font-semibold tracking-tight">Macro Alert</h1>
+            <p class="text-[11px] text-zinc-500">Real-time macro & assets</p>
           </div>
-          <button id="toggle-high" onclick="toggleHigh()" class="w-12 h-7 rounded-full bg-dark-600 relative transition-colors">
-            <span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
-          </button>
         </div>
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium">Язык / Language</p>
-            <p class="text-xs text-zinc-500 mt-0.5">Интерфейс бота и Mini App</p>
+        <button id="btn-quiet" onclick="toggleQuiet()" class="px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300">🔔 Алерты</button>
+      </div>
+    </header>
+
+    <main class="px-4 pt-4 pb-28">
+      <div class="flex gap-1.5 p-1 bg-dark-900 rounded-2xl mb-5">
+        <button onclick="switchTab('home')" id="tab-home" class="tab-active flex-1 py-2.5 rounded-xl text-sm transition-all">Главная</button>
+        <button onclick="switchTab('calendar')" id="tab-calendar" class="flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all">Календарь</button>
+        <button onclick="switchTab('settings')" id="tab-settings" class="flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all">Настройки</button>
+      </div>
+
+      <div id="view-home">
+        <div class="card rounded-2xl p-4 mb-4" style="box-shadow:0 0 20px rgba(232,185,35,0.12)">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs text-zinc-500 uppercase tracking-wider">Статус</span>
+            <span class="flex items-center gap-1.5 text-xs text-accent-green">
+              <span class="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse"></span> Онлайн
+            </span>
           </div>
-          <button onclick="toggleLang()" class="px-3 py-1.5 rounded-lg bg-dark-700 text-sm font-medium">🇷🇺 RU</button>
+          <p class="text-sm text-zinc-300">Мониторинг 13 активов + экономический календарь</p>
+        </div>
+
+        <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Активы</h2>
+        <div class="grid grid-cols-2 gap-2.5 mb-6" id="assets-grid"></div>
+
+        <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Последние алерты</h2>
+        <div class="space-y-2.5">
+          <div class="card rounded-2xl p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-medium impact-high">HIGH</span>
+                  <span class="text-[11px] text-zinc-500">#XAUUSD #DXY</span>
+                </div>
+                <p class="text-sm font-medium leading-snug">ФРС сохранила ставку 5.50%</p>
+                <p class="text-xs text-zinc-500 mt-1.5">Пауэлл: не готовы снижать, пока инфляция не уверенно идёт к 2%</p>
+              </div>
+              <span class="text-[11px] text-zinc-600">14:32</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-0.5">Подписки на активы</h2>
-      <div class="flex flex-wrap gap-2" id="subscribe-chips"></div>
+      <div id="view-calendar" class="hidden">
+        <div class="flex gap-2 mb-4 overflow-x-auto scrollbar-hide pb-1">
+          <button onclick="setPeriod(this)" class="period-btn tab-active px-4 py-2 rounded-full text-sm whitespace-nowrap">Сегодня</button>
+          <button onclick="setPeriod(this)" class="period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap">Завтра</button>
+          <button onclick="setPeriod(this)" class="period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap">Неделя</button>
+        </div>
+        <div class="space-y-3">
+          <div class="card rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-red-400 text-sm">⭐️⭐️⭐️</span>
+              <span class="text-xs font-medium text-zinc-400">US</span>
+              <span class="ml-auto text-[11px] text-zinc-500">15:30 MSK</span>
+            </div>
+            <p class="text-sm font-semibold">CPI (YoY)</p>
+            <div class="flex gap-4 mt-2.5 text-xs">
+              <div><span class="text-zinc-500">Actual</span><br><span class="font-mono">—</span></div>
+              <div><span class="text-zinc-500">Forecast</span><br><span class="font-mono text-gold-400">2.5%</span></div>
+              <div><span class="text-zinc-500">Prev</span><br><span class="font-mono text-zinc-400">2.4%</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <div class="mt-6 card rounded-2xl p-4">
-        <p class="text-xs text-zinc-500 mb-1">Часовой пояс</p>
-        <p class="text-sm font-medium" id="tz-display">Europe/Moscow</p>
+      <div id="view-settings" class="hidden">
+        <div class="card rounded-2xl p-4 mb-4">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <p class="text-sm font-medium">Только High Impact</p>
+              <p class="text-xs text-zinc-500 mt-0.5">Только самые важные новости</p>
+            </div>
+            <button id="toggle-high" onclick="toggleHigh()" class="w-12 h-7 rounded-full bg-dark-600 relative transition-colors">
+              <span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium">Язык</p>
+              <p class="text-xs text-zinc-500 mt-0.5">Интерфейс</p>
+            </div>
+            <button onclick="toggleLang()" class="px-3 py-1.5 rounded-lg bg-dark-700 text-sm font-medium">🇷🇺 RU</button>
+          </div>
+        </div>
+        <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Подписки</h2>
+        <div class="flex flex-wrap gap-2" id="subscribe-chips"></div>
+      </div>
+    </main>
+  </div>
+
+  <div id="app-asset" class="hidden fixed inset-0 z-50 bg-dark-950 flex flex-col">
+    <div class="px-4 pt-3 pb-2 border-b border-white/5 flex items-center gap-3">
+      <button onclick="closeAsset()" class="w-9 h-9 rounded-xl bg-dark-800 flex items-center justify-center text-lg">←</button>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <span id="asset-emoji" class="text-xl"></span>
+          <span id="asset-symbol" class="font-semibold text-[15px]"></span>
+        </div>
+        <p id="asset-fullname" class="text-[11px] text-zinc-500 truncate"></p>
+      </div>
+      <div class="text-right">
+        <p id="asset-price" class="font-mono font-semibold text-[15px]">—</p>
+        <p id="asset-change" class="text-xs font-medium">—</p>
       </div>
     </div>
-  </main>
 
-  <div class="fixed bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-dark-950 to-transparent pointer-events-none"></div>
+    <div class="px-3 py-2 flex gap-1.5 overflow-x-auto scrollbar-hide border-b border-white/5">
+      <button onclick="setTf(this,'1s')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">1s</button>
+      <button onclick="setTf(this,'5s')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">5s</button>
+      <button onclick="setTf(this,'10s')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">10s</button>
+      <button onclick="setTf(this,'1m')" class="tf-btn tf-active px-2.5 py-1 rounded-lg text-xs whitespace-nowrap">1m</button>
+      <button onclick="setTf(this,'5m')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">5m</button>
+      <button onclick="setTf(this,'15m')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">15m</button>
+      <button onclick="setTf(this,'1h')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">1h</button>
+      <button onclick="setTf(this,'4h')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">4h</button>
+      <button onclick="setTf(this,'1d')" class="tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap">1D</button>
+    </div>
+
+    <div class="px-3 py-2 flex gap-2 border-b border-white/5">
+      <button onclick="setChartType('candles')" id="btn-candles" class="px-3 py-1 rounded-lg text-xs font-medium bg-gold-500 text-dark-950">Свечи</button>
+      <button onclick="setChartType('line')" id="btn-line" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-zinc-400">Линия</button>
+      <div class="flex-1"></div>
+      <span class="text-[11px] text-zinc-500 self-center" id="live-indicator">● Live</span>
+    </div>
+
+    <div id="chart-container" class="flex-1"></div>
+
+    <div class="px-4 py-3 border-t border-white/5 grid grid-cols-3 gap-3 text-center">
+      <div>
+        <p class="text-[10px] text-zinc-500 uppercase">Open</p>
+        <p id="stat-open" class="font-mono text-sm">—</p>
+      </div>
+      <div>
+        <p class="text-[10px] text-zinc-500 uppercase">High</p>
+        <p id="stat-high" class="font-mono text-sm text-accent-green">—</p>
+      </div>
+      <div>
+        <p class="text-[10px] text-zinc-500 uppercase">Low</p>
+        <p id="stat-low" class="font-mono text-sm text-accent-red">—</p>
+      </div>
+    </div>
+  </div>
 
   <script>
     const tg = window.Telegram?.WebApp;
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      tg.setHeaderColor('#0a0a0b');
-      tg.setBackgroundColor('#0a0a0b');
-    }
+    if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#0a0a0b'); tg.setBackgroundColor('#0a0a0b'); }
 
     const ASSETS = [
-      { key: 'xauusd', emoji: '🟡', name: 'XAUUSD', full: 'Золото' },
-      { key: 'nasdaq', emoji: '📈', name: 'NASDAQ', full: 'NASDAQ 100' },
-      { key: 'sp500', emoji: '📊', name: 'S&P 500', full: 'S&P 500' },
-      { key: 'btc', emoji: '🪙', name: 'BTC', full: 'Bitcoin' },
-      { key: 'eth', emoji: '💎', name: 'ETH', full: 'Ethereum' },
-      { key: 'dxy', emoji: '💵', name: 'DXY', full: 'Dollar Index' },
-      { key: 'oil', emoji: '🛢', name: 'OIL', full: 'Brent / WTI' },
-      { key: 'eurusd', emoji: '💶', name: 'EURUSD', full: 'EUR/USD' },
-      { key: 'gbpusd', emoji: '💷', name: 'GBPUSD', full: 'GBP/USD' },
-      { key: 'usdjpy', emoji: '💴', name: 'USDJPY', full: 'USD/JPY' },
-      { key: 'agro', emoji: '🌾', name: 'AGRO', full: 'Commodities' },
-      { key: 'tesla', emoji: '🚗', name: 'TSLA', full: 'Tesla & EV' },
-      { key: 'ai_tech', emoji: '🤖', name: 'AI', full: 'AI & Chips' },
+      { key: 'xauusd', emoji: '🟡', name: 'XAUUSD', full: 'Золото', binance: null, base: 2650 },
+      { key: 'nasdaq', emoji: '📈', name: 'NASDAQ', full: 'NASDAQ 100', binance: null, base: 20500 },
+      { key: 'sp500', emoji: '📊', name: 'S&P 500', full: 'S&P 500', binance: null, base: 5800 },
+      { key: 'btc', emoji: '🪙', name: 'BTC', full: 'Bitcoin', binance: 'BTCUSDT', base: 67000 },
+      { key: 'eth', emoji: '💎', name: 'ETH', full: 'Ethereum', binance: 'ETHUSDT', base: 3500 },
+      { key: 'dxy', emoji: '💵', name: 'DXY', full: 'Dollar Index', binance: null, base: 104.5 },
+      { key: 'oil', emoji: '🛢', name: 'OIL', full: 'Brent / WTI', binance: null, base: 78 },
+      { key: 'eurusd', emoji: '💶', name: 'EURUSD', full: 'EUR/USD', binance: null, base: 1.085 },
+      { key: 'gbpusd', emoji: '💷', name: 'GBPUSD', full: 'GBP/USD', binance: null, base: 1.305 },
+      { key: 'usdjpy', emoji: '💴', name: 'USDJPY', full: 'USD/JPY', binance: null, base: 149.5 },
+      { key: 'agro', emoji: '🌾', name: 'AGRO', full: 'Commodities', binance: null, base: 580 },
+      { key: 'tesla', emoji: '🚗', name: 'TSLA', full: 'Tesla & EV', binance: null, base: 250 },
+      { key: 'ai_tech', emoji: '🤖', name: 'NVDA', full: 'AI & Chips', binance: null, base: 140 },
     ];
 
-    let quiet = false;
-    let onlyHigh = false;
-    let lang = 'ru';
+    let quiet = false, onlyHigh = false, lang = 'ru';
     let subscribed = Object.fromEntries(ASSETS.map(a => [a.key, true]));
+    let currentAsset = null, chart = null, candleSeries = null, lineSeries = null;
+    let chartType = 'candles', currentTf = '1m', priceInterval = null, ws = null;
 
     function renderAssets() {
       document.getElementById('assets-grid').innerHTML = ASSETS.map(a => `
-        <button onclick="openAsset('${a.key}')" class="card rounded-2xl p-3.5 text-left active:scale-[0.98] transition-transform">
+        <button onclick="openAsset('${a.key}')" class="card rounded-2xl p-3.5 text-left">
           <div class="text-2xl mb-1.5">${a.emoji}</div>
           <div class="text-sm font-semibold">${a.name}</div>
           <div class="text-[11px] text-zinc-500 mt-0.5">${a.full}</div>
-        </button>
-      `).join('');
+        </button>`).join('');
     }
 
     function renderChips() {
       document.getElementById('subscribe-chips').innerHTML = ASSETS.map(a => `
-        <button onclick="toggleSub('${a.key}')" class="asset-chip ${subscribed[a.key] ? 'active' : ''} px-3 py-1.5 rounded-full text-xs font-medium transition-all">
-          ${a.emoji} ${a.name}
-        </button>
-      `).join('');
+        <button onclick="toggleSub('${a.key}')" class="asset-chip ${subscribed[a.key]?'active':''} px-3 py-1.5 rounded-full text-xs font-medium">
+          ${a.emoji} ${a.name}</button>`).join('');
     }
 
     function switchTab(tab) {
-      ['home', 'calendar', 'settings'].forEach(t => {
-        document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
-        const btn = document.getElementById('tab-' + t);
-        btn.className = t === tab
-          ? 'tab-active flex-1 py-2.5 rounded-xl text-sm transition-all'
-          : 'flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all';
+      ['home','calendar','settings'].forEach(t => {
+        document.getElementById('view-'+t).classList.toggle('hidden', t !== tab);
+        document.getElementById('tab-'+t).className = t === tab ? 'tab-active flex-1 py-2.5 rounded-xl text-sm transition-all' : 'flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all';
       });
       if (tg) tg.HapticFeedback?.impactOccurred('light');
     }
 
-    function setPeriod(btn, period) {
-      document.querySelectorAll('.period-btn').forEach(b => {
-        b.className = 'period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap';
-      });
+    function setPeriod(btn) {
+      document.querySelectorAll('.period-btn').forEach(b => b.className = 'period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap');
       btn.className = 'period-btn tab-active px-4 py-2 rounded-full text-sm whitespace-nowrap';
-      if (tg) tg.HapticFeedback?.selectionChanged();
     }
 
     function toggleQuiet() {
       quiet = !quiet;
       const btn = document.getElementById('btn-quiet');
       btn.textContent = quiet ? '🔇 Тихий' : '🔔 Алерты';
-      btn.className = quiet
-        ? 'px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/20 border border-red-500/30 text-red-400'
-        : 'px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300';
-      if (tg) tg.HapticFeedback?.notificationOccurred(quiet ? 'warning' : 'success');
+      btn.className = quiet ? 'px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/20 border border-red-500/30 text-red-400' : 'px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300';
     }
 
     function toggleHigh() {
       onlyHigh = !onlyHigh;
-      const toggle = document.getElementById('toggle-high');
-      const knob = toggle.querySelector('span');
-      if (onlyHigh) {
-        toggle.classList.add('bg-gold-500');
-        toggle.classList.remove('bg-dark-600');
-        knob.style.transform = 'translateX(20px)';
-      } else {
-        toggle.classList.remove('bg-gold-500');
-        toggle.classList.add('bg-dark-600');
-        knob.style.transform = 'translateX(0)';
-      }
-      if (tg) tg.HapticFeedback?.selectionChanged();
+      const t = document.getElementById('toggle-high'), k = t.querySelector('span');
+      if (onlyHigh) { t.classList.add('bg-gold-500'); t.classList.remove('bg-dark-600'); k.style.transform = 'translateX(20px)'; }
+      else { t.classList.remove('bg-gold-500'); t.classList.add('bg-dark-600'); k.style.transform = 'translateX(0)'; }
     }
 
-    function toggleLang() {
-      lang = lang === 'ru' ? 'en' : 'ru';
-      event.target.textContent = lang === 'ru' ? '🇷🇺 RU' : '🇬🇧 EN';
-      if (tg) tg.HapticFeedback?.selectionChanged();
-    }
-
-    function toggleSub(key) {
-      subscribed[key] = !subscribed[key];
-      renderChips();
-      if (tg) tg.HapticFeedback?.selectionChanged();
-    }
+    function toggleLang() { lang = lang === 'ru' ? 'en' : 'ru'; event.target.textContent = lang === 'ru' ? '🇷🇺 RU' : '🇬🇧 EN'; }
+    function toggleSub(key) { subscribed[key] = !subscribed[key]; renderChips(); }
 
     function openAsset(key) {
-      const a = ASSETS.find(x => x.key === key);
-      if (tg) {
-        tg.showPopup({
-          title: a.emoji + ' ' + a.full,
-          message: 'Подписка: ' + (subscribed[key] ? 'включена ✅' : 'выключена ❌') + '\n\nЗдесь будут детали по активу, последние новости и быстрые действия.',
-          buttons: [{ type: 'ok' }]
-        });
-        tg.HapticFeedback?.impactOccurred('medium');
+      currentAsset = ASSETS.find(a => a.key === key);
+      if (!currentAsset) return;
+      document.getElementById('app-main').classList.add('hidden');
+      document.getElementById('app-asset').classList.remove('hidden');
+      document.getElementById('asset-emoji').textContent = currentAsset.emoji;
+      document.getElementById('asset-symbol').textContent = currentAsset.name;
+      document.getElementById('asset-fullname').textContent = currentAsset.full;
+      if (tg) { tg.BackButton.show(); tg.BackButton.onClick(closeAsset); tg.HapticFeedback?.impactOccurred('medium'); }
+      initChart(); loadChartData(); startLivePrice();
+    }
+
+    function closeAsset() {
+      stopLive();
+      if (chart) { chart.remove(); chart = null; candleSeries = null; lineSeries = null; }
+      document.getElementById('app-asset').classList.add('hidden');
+      document.getElementById('app-main').classList.remove('hidden');
+      if (tg) tg.BackButton.hide();
+    }
+
+    function initChart() {
+      const container = document.getElementById('chart-container');
+      container.innerHTML = '';
+      chart = LightweightCharts.createChart(container, {
+        layout: { background: { type: 'solid', color: '#0a0a0b' }, textColor: '#a1a1aa' },
+        grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: 'rgba(255,255,255,0.08)' },
+        timeScale: { borderColor: 'rgba(255,255,255,0.08)', timeVisible: true, secondsVisible: true },
+        handleScroll: { vertTouchDrag: false },
+      });
+      candleSeries = chart.addCandlestickSeries({
+        upColor: '#34d399', downColor: '#f87171',
+        borderUpColor: '#34d399', borderDownColor: '#f87171',
+        wickUpColor: '#34d399', wickDownColor: '#f87171',
+      });
+      lineSeries = chart.addLineSeries({ color: '#e8b923', lineWidth: 2, visible: false });
+      new ResizeObserver(entries => {
+        if (entries[0] && chart) {
+          const { width, height } = entries[0].contentRect;
+          chart.applyOptions({ width, height });
+        }
+      }).observe(container);
+    }
+
+    function generateCandles(base, count, tfSec) {
+      const now = Math.floor(Date.now() / 1000);
+      const data = [];
+      let price = base * (0.98 + Math.random() * 0.04);
+      for (let i = count; i >= 0; i--) {
+        const time = now - i * tfSec;
+        const open = price;
+        const change = (Math.random() - 0.48) * base * 0.003;
+        const close = open + change;
+        const high = Math.max(open, close) + Math.random() * base * 0.001;
+        const low = Math.min(open, close) - Math.random() * base * 0.001;
+        data.push({ time, open, high, low, close });
+        price = close;
       }
+      return data;
+    }
+
+    function tfToSeconds(tf) {
+      return { '1s':1, '5s':5, '10s':10, '1m':60, '5m':300, '15m':900, '1h':3600, '4h':14400, '1d':86400 }[tf] || 60;
+    }
+
+    function loadChartData() {
+      if (!currentAsset || !chart) return;
+      const tfSec = tfToSeconds(currentTf);
+      const count = (currentTf === '1s' || currentTf === '5s') ? 120 : currentTf === '1d' ? 90 : 150;
+      const candles = generateCandles(currentAsset.base, count, tfSec);
+      candleSeries.setData(candles);
+      lineSeries.setData(candles.map(c => ({ time: c.time, value: c.close })));
+      const last = candles[candles.length - 1];
+      updatePriceUI(last.close, candles[0].open);
+      document.getElementById('stat-open').textContent = formatPrice(last.open);
+      document.getElementById('stat-high').textContent = formatPrice(last.high);
+      document.getElementById('stat-low').textContent = formatPrice(last.low);
+      chart.timeScale().fitContent();
+    }
+
+    function setTf(btn, tf) {
+      currentTf = tf;
+      document.querySelectorAll('.tf-btn').forEach(b => b.className = 'tf-btn px-2.5 py-1 rounded-lg text-xs text-zinc-400 bg-dark-800 whitespace-nowrap');
+      btn.className = 'tf-btn tf-active px-2.5 py-1 rounded-lg text-xs whitespace-nowrap';
+      loadChartData();
+      if (tg) tg.HapticFeedback?.selectionChanged();
+    }
+
+    function setChartType(type) {
+      chartType = type;
+      if (type === 'candles') {
+        candleSeries.applyOptions({ visible: true });
+        lineSeries.applyOptions({ visible: false });
+        document.getElementById('btn-candles').className = 'px-3 py-1 rounded-lg text-xs font-medium bg-gold-500 text-dark-950';
+        document.getElementById('btn-line').className = 'px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-zinc-400';
+      } else {
+        candleSeries.applyOptions({ visible: false });
+        lineSeries.applyOptions({ visible: true });
+        document.getElementById('btn-line').className = 'px-3 py-1 rounded-lg text-xs font-medium bg-gold-500 text-dark-950';
+        document.getElementById('btn-candles').className = 'px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-zinc-400';
+      }
+      if (tg) tg.HapticFeedback?.selectionChanged();
+    }
+
+    function formatPrice(p) {
+      if (p >= 1000) return p.toFixed(1);
+      if (p >= 10) return p.toFixed(2);
+      if (p >= 1) return p.toFixed(4);
+      return p.toFixed(5);
+    }
+
+    function updatePriceUI(price, prev) {
+      document.getElementById('asset-price').textContent = formatPrice(price);
+      const pct = ((price - prev) / prev * 100);
+      const ch = document.getElementById('asset-change');
+      ch.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+      ch.className = 'text-xs font-medium ' + (pct >= 0 ? 'price-up' : 'price-down');
+    }
+
+    function startLivePrice() {
+      stopLive();
+      if (currentAsset.binance) {
+        ws = new WebSocket('wss://stream.binance.com:9443/ws/' + currentAsset.binance.toLowerCase() + '@trade');
+        ws.onmessage = (ev) => {
+          const data = JSON.parse(ev.data);
+          const price = parseFloat(data.p);
+          updatePriceUI(price, currentAsset.base);
+          currentAsset.base = price;
+        };
+        document.getElementById('live-indicator').textContent = '● Live Binance';
+        document.getElementById('live-indicator').className = 'text-[11px] text-accent-green self-center';
+      } else {
+        document.getElementById('live-indicator').textContent = '● Live (sim)';
+        document.getElementById('live-indicator').className = 'text-[11px] text-gold-400 self-center';
+        priceInterval = setInterval(() => {
+          if (!currentAsset) return;
+          const change = (Math.random() - 0.5) * currentAsset.base * 0.0008;
+          currentAsset.base += change;
+          updatePriceUI(currentAsset.base, currentAsset.base - change);
+        }, 1000);
+      }
+    }
+
+    function stopLive() {
+      if (priceInterval) { clearInterval(priceInterval); priceInterval = null; }
+      if (ws) { ws.close(); ws = null; }
     }
 
     renderAssets();
