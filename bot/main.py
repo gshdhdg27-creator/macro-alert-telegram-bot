@@ -10,7 +10,7 @@ from loguru import logger
 
 from bot.config import get_settings
 from bot.models.db import init_db
-from bot.handlers import start, menu, settings as settings_handler, calendar
+from bot.handlers import start, menu, settings as settings_handler, calendar, history
 from bot.services.calendar_service import poll_calendar
 from bot.services.news_service import poll_news
 
@@ -51,6 +51,7 @@ async def main() -> None:
     dp.include_router(start.router)
     dp.include_router(settings_handler.router)
     dp.include_router(calendar.router)
+    dp.include_router(history.router)
     dp.include_router(menu.router)  # menu last because of broad F.text
 
     # Scheduler
