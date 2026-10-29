@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Macro Alert</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dark: {
+              950: '#0a0a0b',
+              900: '#111113',
+              800: '#1a1a1e',
+              700: '#242428',
+              600: '#2e2e33',
+            },
+            gold: {
+              400: '#f5c542',
+              500: '#e8b923',
+              600: '#d4a017',
+            },
+            accent: {
+              cyan: '#22d3ee',
+              green: '#34d399',
+              red: '#f87171',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0a0a0b;
+      color: #f4f4f5;
+      overscroll-behavior: none;
+    }
+    .card {
+      background: linear-gradient(145deg, #1a1a1e 0%, #141416 100%);
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: all 0.2s ease;
+    }
+    .card:active { transform: scale(0.98); }
+    .glow-gold {
+      box-shadow: 0 0 20px rgba(232, 185, 35, 0.15);
+    }
+    .tab-active {
+      background: linear-gradient(135deg, #e8b923 0%, #d4a017 100%);
+      color: #0a0a0b;
+      font-weight: 600;
+    }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .asset-chip {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .asset-chip.active {
+      background: rgba(232, 185, 35, 0.15);
+      border-color: rgba(232, 185, 35, 0.4);
+      color: #f5c542;
+    }
+    .impact-high { color: #f87171; }
+    .impact-medium { color: #f5c542; }
+    .impact-low { color: #a1a1aa; }
+  </style>
+</head>
+<body class="min-h-screen bg-dark-950 text-zinc-100">
+  <header class="sticky top-0 z-50 bg-dark-950/90 backdrop-blur-xl border-b border-white/5 px-4 pt-3 pb-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center text-dark-950 font-bold text-lg">M</div>
+        <div>
+          <h1 class="text-[15px] font-semibold tracking-tight">Macro Alert</h1>
+          <p class="text-[11px] text-zinc-500">Real-time macro & assets</p>
+        </div>
+      </div>
+      <button id="btn-quiet" onclick="toggleQuiet()" class="px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300">
+        🔔 Алерты
+      </button>
+    </div>
+  </header>
+
+  <main class="px-4 pt-4 pb-28">
+    <div class="flex gap-1.5 p-1 bg-dark-900 rounded-2xl mb-5">
+      <button onclick="switchTab('home')" id="tab-home" class="tab-active flex-1 py-2.5 rounded-xl text-sm transition-all">Главная</button>
+      <button onclick="switchTab('calendar')" id="tab-calendar" class="flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all">Календарь</button>
+      <button onclick="switchTab('settings')" id="tab-settings" class="flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all">Настройки</button>
+    </div>
+
+    <div id="view-home">
+      <div class="card rounded-2xl p-4 mb-4 glow-gold">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs text-zinc-500 uppercase tracking-wider">Статус</span>
+          <span class="flex items-center gap-1.5 text-xs text-accent-green">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse"></span>
+            Онлайн
+          </span>
+        </div>
+        <p class="text-sm text-zinc-300">Мониторинг 13 активов + экономический календарь</p>
+      </div>
+
+      <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-0.5">Активы</h2>
+      <div class="grid grid-cols-2 gap-2.5 mb-6" id="assets-grid"></div>
+
+      <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-0.5">Последние алерты</h2>
+      <div class="space-y-2.5" id="alerts-list">
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-medium impact-high">HIGH</span>
+                <span class="text-[11px] text-zinc-500">#XAUUSD #DXY</span>
+              </div>
+              <p class="text-sm font-medium leading-snug">ФРС сохранила ставку 5.50%</p>
+              <p class="text-xs text-zinc-500 mt-1.5">Пауэлл: не готовы снижать, пока инфляция не уверенно идёт к 2%</p>
+            </div>
+            <span class="text-[11px] text-zinc-600 whitespace-nowrap">14:32</span>
+          </div>
+        </div>
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-medium impact-medium">MED</span>
+                <span class="text-[11px] text-zinc-500">#BTC</span>
+              </div>
+              <p class="text-sm font-medium leading-snug">BlackRock IBIT приток $420M</p>
+              <p class="text-xs text-zinc-500 mt-1.5">Крупнейший дневной приток за 3 недели</p>
+            </div>
+            <span class="text-[11px] text-zinc-600 whitespace-nowrap">12:18</span>
+          </div>
+        </div>
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-medium impact-high">HIGH</span>
+                <span class="text-[11px] text-zinc-500">#NVDA #AI</span>
+              </div>
+              <p class="text-sm font-medium leading-snug">Nvidia отчиталась лучше ожиданий</p>
+              <p class="text-xs text-zinc-500 mt-1.5">Выручка $35.1B, data center +112% YoY</p>
+            </div>
+            <span class="text-[11px] text-zinc-600 whitespace-nowrap">вчера</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-calendar" class="hidden">
+      <div class="flex gap-2 mb-4 overflow-x-auto scrollbar-hide pb-1">
+        <button onclick="setPeriod(this, 'today')" class="period-btn tab-active px-4 py-2 rounded-full text-sm whitespace-nowrap">Сегодня</button>
+        <button onclick="setPeriod(this, 'tomorrow')" class="period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap">Завтра</button>
+        <button onclick="setPeriod(this, 'week')" class="period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap">Неделя</button>
+      </div>
+      <div class="space-y-3" id="calendar-list">
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-red-400 text-sm">⭐️⭐️⭐️</span>
+            <span class="text-xs font-medium text-zinc-400">US</span>
+            <span class="ml-auto text-[11px] text-zinc-500">15:30 MSK</span>
+          </div>
+          <p class="text-sm font-semibold">CPI (YoY)</p>
+          <div class="flex gap-4 mt-2.5 text-xs">
+            <div><span class="text-zinc-500">Actual</span><br><span class="font-mono text-zinc-200">—</span></div>
+            <div><span class="text-zinc-500">Forecast</span><br><span class="font-mono text-gold-400">2.5%</span></div>
+            <div><span class="text-zinc-500">Prev</span><br><span class="font-mono text-zinc-400">2.4%</span></div>
+          </div>
+        </div>
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-red-400 text-sm">⭐️⭐️⭐️</span>
+            <span class="text-xs font-medium text-zinc-400">US</span>
+            <span class="ml-auto text-[11px] text-zinc-500">15:30 MSK</span>
+          </div>
+          <p class="text-sm font-semibold">Non-Farm Payrolls</p>
+          <div class="flex gap-4 mt-2.5 text-xs">
+            <div><span class="text-zinc-500">Actual</span><br><span class="font-mono text-zinc-200">—</span></div>
+            <div><span class="text-zinc-500">Forecast</span><br><span class="font-mono text-gold-400">180K</span></div>
+            <div><span class="text-zinc-500">Prev</span><br><span class="font-mono text-zinc-400">254K</span></div>
+          </div>
+        </div>
+        <div class="card rounded-2xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-gold-400 text-sm">⭐️⭐️</span>
+            <span class="text-xs font-medium text-zinc-400">EU</span>
+            <span class="ml-auto text-[11px] text-zinc-500">15:15 MSK</span>
+          </div>
+          <p class="text-sm font-semibold">ECB Interest Rate Decision</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-settings" class="hidden">
+      <div class="card rounded-2xl p-4 mb-4">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <p class="text-sm font-medium">Только High Impact</p>
+            <p class="text-xs text-zinc-500 mt-0.5">Получать только самые важные новости</p>
+          </div>
+          <button id="toggle-high" onclick="toggleHigh()" class="w-12 h-7 rounded-full bg-dark-600 relative transition-colors">
+            <span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+          </button>
+        </div>
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium">Язык / Language</p>
+            <p class="text-xs text-zinc-500 mt-0.5">Интерфейс бота и Mini App</p>
+          </div>
+          <button onclick="toggleLang()" class="px-3 py-1.5 rounded-lg bg-dark-700 text-sm font-medium">🇷🇺 RU</button>
+        </div>
+      </div>
+
+      <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-0.5">Подписки на активы</h2>
+      <div class="flex flex-wrap gap-2" id="subscribe-chips"></div>
+
+      <div class="mt-6 card rounded-2xl p-4">
+        <p class="text-xs text-zinc-500 mb-1">Часовой пояс</p>
+        <p class="text-sm font-medium" id="tz-display">Europe/Moscow</p>
+      </div>
+    </div>
+  </main>
+
+  <div class="fixed bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-dark-950 to-transparent pointer-events-none"></div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      tg.setHeaderColor('#0a0a0b');
+      tg.setBackgroundColor('#0a0a0b');
+    }
+
+    const ASSETS = [
+      { key: 'xauusd', emoji: '🟡', name: 'XAUUSD', full: 'Золото' },
+      { key: 'nasdaq', emoji: '📈', name: 'NASDAQ', full: 'NASDAQ 100' },
+      { key: 'sp500', emoji: '📊', name: 'S&P 500', full: 'S&P 500' },
+      { key: 'btc', emoji: '🪙', name: 'BTC', full: 'Bitcoin' },
+      { key: 'eth', emoji: '💎', name: 'ETH', full: 'Ethereum' },
+      { key: 'dxy', emoji: '💵', name: 'DXY', full: 'Dollar Index' },
+      { key: 'oil', emoji: '🛢', name: 'OIL', full: 'Brent / WTI' },
+      { key: 'eurusd', emoji: '💶', name: 'EURUSD', full: 'EUR/USD' },
+      { key: 'gbpusd', emoji: '💷', name: 'GBPUSD', full: 'GBP/USD' },
+      { key: 'usdjpy', emoji: '💴', name: 'USDJPY', full: 'USD/JPY' },
+      { key: 'agro', emoji: '🌾', name: 'AGRO', full: 'Commodities' },
+      { key: 'tesla', emoji: '🚗', name: 'TSLA', full: 'Tesla & EV' },
+      { key: 'ai_tech', emoji: '🤖', name: 'AI', full: 'AI & Chips' },
+    ];
+
+    let quiet = false;
+    let onlyHigh = false;
+    let lang = 'ru';
+    let subscribed = Object.fromEntries(ASSETS.map(a => [a.key, true]));
+
+    function renderAssets() {
+      document.getElementById('assets-grid').innerHTML = ASSETS.map(a => `
+        <button onclick="openAsset('${a.key}')" class="card rounded-2xl p-3.5 text-left active:scale-[0.98] transition-transform">
+          <div class="text-2xl mb-1.5">${a.emoji}</div>
+          <div class="text-sm font-semibold">${a.name}</div>
+          <div class="text-[11px] text-zinc-500 mt-0.5">${a.full}</div>
+        </button>
+      `).join('');
+    }
+
+    function renderChips() {
+      document.getElementById('subscribe-chips').innerHTML = ASSETS.map(a => `
+        <button onclick="toggleSub('${a.key}')" class="asset-chip ${subscribed[a.key] ? 'active' : ''} px-3 py-1.5 rounded-full text-xs font-medium transition-all">
+          ${a.emoji} ${a.name}
+        </button>
+      `).join('');
+    }
+
+    function switchTab(tab) {
+      ['home', 'calendar', 'settings'].forEach(t => {
+        document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById('tab-' + t);
+        btn.className = t === tab
+          ? 'tab-active flex-1 py-2.5 rounded-xl text-sm transition-all'
+          : 'flex-1 py-2.5 rounded-xl text-sm text-zinc-400 transition-all';
+      });
+      if (tg) tg.HapticFeedback?.impactOccurred('light');
+    }
+
+    function setPeriod(btn, period) {
+      document.querySelectorAll('.period-btn').forEach(b => {
+        b.className = 'period-btn px-4 py-2 rounded-full text-sm text-zinc-400 bg-dark-800 whitespace-nowrap';
+      });
+      btn.className = 'period-btn tab-active px-4 py-2 rounded-full text-sm whitespace-nowrap';
+      if (tg) tg.HapticFeedback?.selectionChanged();
+    }
+
+    function toggleQuiet() {
+      quiet = !quiet;
+      const btn = document.getElementById('btn-quiet');
+      btn.textContent = quiet ? '🔇 Тихий' : '🔔 Алерты';
+      btn.className = quiet
+        ? 'px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/20 border border-red-500/30 text-red-400'
+        : 'px-3 py-1.5 rounded-full text-xs font-medium bg-dark-800 border border-white/10 text-zinc-300';
+      if (tg) tg.HapticFeedback?.notificationOccurred(quiet ? 'warning' : 'success');
+    }
+
+    function toggleHigh() {
+      onlyHigh = !onlyHigh;
+      const toggle = document.getElementById('toggle-high');
+      const knob = toggle.querySelector('span');
+      if (onlyHigh) {
+        toggle.classList.add('bg-gold-500');
+        toggle.classList.remove('bg-dark-600');
+        knob.style.transform = 'translateX(20px)';
+      } else {
+        toggle.classList.remove('bg-gold-500');
+        toggle.classList.add('bg-dark-600');
+        knob.style.transform = 'translateX(0)';
+      }
+      if (tg) tg.HapticFeedback?.selectionChanged();
+    }
+
+    function toggleLang() {
+      lang = lang === 'ru' ? 'en' : 'ru';
+      event.target.textContent = lang === 'ru' ? '🇷🇺 RU' : '🇬🇧 EN';
+      if (tg) tg.HapticFeedback?.selectionChanged();
+    }
+
+    function toggleSub(key) {
+      subscribed[key] = !subscribed[key];
+      renderChips();
+      if (tg) tg.HapticFeedback?.selectionChanged();
+    }
+
+    function openAsset(key) {
+      const a = ASSETS.find(x => x.key === key);
+      if (tg) {
+        tg.showPopup({
+          title: a.emoji + ' ' + a.full,
+          message: 'Подписка: ' + (subscribed[key] ? 'включена ✅' : 'выключена ❌') + '\n\nЗдесь будут детали по активу, последние новости и быстрые действия.',
+          buttons: [{ type: 'ok' }]
+        });
+        tg.HapticFeedback?.impactOccurred('medium');
+      }
+    }
+
+    renderAssets();
+    renderChips();
+  </script>
+</body>
+</html>
