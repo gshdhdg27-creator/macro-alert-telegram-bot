@@ -1,9 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "",
-  "outputDirectory": "miniapp",
   "framework": null,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "buildCommand": "",
+  "outputDirectory": "miniapp"
 }

@@ -1,2 +1,0 @@
-# Bot dependencies moved to requirements.bot.txt
-# This file is intentionally empty so Vercel does not detect a Python project.

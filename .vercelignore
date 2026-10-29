@@ -1,0 +1,8 @@
+bot/
+Dockerfile
+docker-compose.yml
+requirements.txt
+requirements.bot.txt
+.env
+.env.example
+*.py
