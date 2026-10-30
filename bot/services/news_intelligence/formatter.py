@@ -1,8 +1,10 @@
-"""Telegram HTML message formatter — Macro Alert visual style."""
+"""Telegram HTML message formatter — Macro Alert visual style. Escapes all dynamic content."""
 from __future__ import annotations
 
+import html
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -24,6 +26,25 @@ IMP_EMOJI = {
 }
 
 
+def _e(s: Any) -> str:
+    """Escape for Telegram HTML."""
+    if s is None:
+        return ""
+    return html.escape(str(s), quote=True)
+
+
+def _safe_https(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        p = urlparse(url.strip())
+        if p.scheme == "https" and p.netloc:
+            return url.strip()
+    except Exception:
+        pass
+    return None
+
+
 def format_news_message(
     item: RawNews,
     analysis: Dict[str, Any],
@@ -35,6 +56,8 @@ def format_news_message(
     cat_name = cat.get("name_ru", cat_id.upper())
     bias = analysis.get("bias", "NEUTRAL")
     importance = analysis.get("importance", "MEDIUM")
+    confidence = analysis.get("confidence", "LOW")
+    method = analysis.get("method", "rule-based")
     impact = analysis.get("impact") or {}
     assets = analysis.get("assets") or []
 
@@ -45,38 +68,42 @@ def format_news_message(
 
     impact_lines = []
     for a, d in impact.items():
-        impact_lines.append(f"  • {a}: {BIAS_EMOJI.get(d, '⚪')} {d}")
-    impact_block = "\n".join(impact_lines) if impact_lines else "  • MARKET: " + bias
+        impact_lines.append(f"  • {_e(a)}: {BIAS_EMOJI.get(str(d), '⚪')} {_e(d)}")
+    impact_block = "\n".join(impact_lines) if impact_lines else f"  • MARKET: {_e(bias)}"
 
-    assets_str = ", ".join(assets) if assets else "—"
-    summary = item.summary[:500] + ("…" if len(item.summary) > 500 else "") if item.summary else item.title
+    assets_str = ", ".join(_e(a) for a in assets) if assets else "—"
+    summary_raw = item.summary if item.summary else item.title
+    summary = _e(summary_raw[:800] + ("…" if len(summary_raw) > 800 else ""))
 
-    # FIX: Unicode dash must be a string literal, not a bare identifier
     sep = "━" * 18
+    analysis_text = _e(analysis.get("analysis_ru") or "—")
 
     text = (
-        f"{IMP_EMOJI.get(importance, '🟠')} <b>{pub_type}</b> | {emoji} <b>{cat_name}</b>\n"
+        f"{IMP_EMOJI.get(importance, '🟠')} <b>{_e(pub_type)}</b> | {emoji} <b>{_e(cat_name)}</b>\n"
         f"{sep}\n\n"
-        f"<b>{item.title}</b>\n"
-        f"<i>{when}</i>\n\n"
+        f"<b>{_e(item.title)}</b>\n"
+        f"<i>{_e(when)}</i>\n\n"
         f"<b>ЧТО ПРОИЗОШЛО?</b>\n"
         f"{summary}\n\n"
         f"<b>ЗАТРОНУТЫЕ АКТИВЫ:</b>\n{assets_str}\n\n"
         f"<b>ВЛИЯНИЕ НА РЫНОК:</b>\n{impact_block}\n\n"
-        f"<b>AI MARKET ANALYSIS:</b>\n"
-        f"{analysis.get('analysis_ru', '—')}\n\n"
-        f"<b>ВАЖНОСТЬ:</b> {importance}\n"
-        f"<b>ИСТОЧНИК:</b> {item.source}"
+        f"<b>АНАЛИЗ ({_e(method)}):</b>\n"
+        f"{analysis_text}\n\n"
+        f"<b>ВАЖНОСТЬ:</b> {_e(importance)}\n"
+        f"<b>CONFIDENCE:</b> {_e(confidence)}\n"
+        f"<b>ИСТОЧНИК:</b> {_e(item.source)}"
     )
-    if item.link:
-        text += f'\n<a href="{item.link}">Открыть первоисточник</a>'
+    safe_link = _safe_https(item.link)
+    if safe_link:
+        text += f'\n<a href="{_e(safe_link)}">Открыть первоисточник</a>'
     return text
 
 
 def news_inline_kb(item: RawNews, category: str) -> InlineKeyboardMarkup:
     rows = []
-    if item.link:
-        rows.append([InlineKeyboardButton(text="🌐 Источник", url=item.link)])
+    safe_link = _safe_https(item.link)
+    if safe_link:
+        rows.append([InlineKeyboardButton(text="🌐 Источник", url=safe_link)])
     rows.append([
         InlineKeyboardButton(text="📰 Все новости", callback_data="news:menu"),
         InlineKeyboardButton(

@@ -1,4 +1,4 @@
-"""AI / rule-based market analysis. Never invents prices, facts or events."""
+"""Market analysis — never invents prices/events. CRITICAL only for exceptional cases."""
 from __future__ import annotations
 
 import json
@@ -12,7 +12,10 @@ from bot.services.news_intelligence.collector import RawNews
 
 settings = get_settings()
 
-# Keyword hints are a weak prior only — not definitive direction
+ALLOWED_BIAS = {"BULLISH", "BEARISH", "NEUTRAL", "UNCERTAIN"}
+ALLOWED_IMP = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+ALLOWED_CONF = {"LOW", "MEDIUM", "HIGH"}
+
 BULLISH_HINTS = [
     "surge", "rally", "rise", "gain", "beat", "stronger", "growth", "approval",
     "inflow", "record high", "boost", "optimistic", "cut rates", "stimulus",
@@ -24,7 +27,6 @@ BEARISH_HINTS = [
 
 
 def _bias_from_text(text: str) -> str:
-    """Weak heuristic. Prefer UNCERTAIN when signals conflict or are weak."""
     t = text.lower()
     b = sum(1 for h in BULLISH_HINTS if h in t)
     r = sum(1 for h in BEARISH_HINTS if h in t)
@@ -38,19 +40,51 @@ def _bias_from_text(text: str) -> str:
 
 
 def _importance(text: str, category: str) -> str:
+    """CRITICAL only for genuinely exceptional language — not every FOMC mention."""
     t = text.lower()
     critical_kw = [
-        "rate decision", "emergency", "crash", "default", "war", "nfp", "fomc",
-        "cpi ", "interest rate", "hack", "etf approved",
+        "emergency rate", "market crash", "sovereign default", "bank run",
+        "nuclear", "declaration of war", "systemic failure",
     ]
-    high_kw = ["fed", "ecb", "powell", "inflation", "gdp", "unemployment", "bitcoin"]
+    high_kw = [
+        "rate decision", "fomc statement", "nfp ", "nonfarm payroll",
+        "cpi ", "interest rate decision", "etf approved", "hack ",
+    ]
     if any(k in t for k in critical_kw):
         return "CRITICAL"
-    if category in ("central_banks", "economic") or any(k in t for k in high_kw):
+    if any(k in t for k in high_kw) or category in ("central_banks",):
         return "HIGH"
-    if category in ("geopolitics", "whales", "crypto"):
+    if category in ("economic", "geopolitics", "whales", "crypto"):
         return "MEDIUM"
     return "MEDIUM"
+
+
+def _validate_analysis(data: dict, fallback: dict) -> dict:
+    bias = str(data.get("bias") or fallback["bias"]).upper()
+    if bias not in ALLOWED_BIAS:
+        bias = fallback["bias"]
+    importance = str(data.get("importance") or fallback["importance"]).upper()
+    if importance not in ALLOWED_IMP:
+        importance = fallback["importance"]
+    confidence = str(data.get("confidence") or fallback["confidence"]).upper()
+    if confidence not in ALLOWED_CONF:
+        confidence = fallback["confidence"]
+    analysis_ru = data.get("analysis_ru") or fallback["analysis_ru"]
+    impact = data.get("assets_impact") if isinstance(data.get("assets_impact"), dict) else fallback["impact"]
+    clean_impact = {}
+    for k, v in (impact or {}).items():
+        vv = str(v).upper()
+        clean_impact[str(k)[:32]] = vv if vv in ALLOWED_BIAS else "UNCERTAIN"
+    return {
+        "bias": bias,
+        "importance": importance,
+        "confidence": confidence,
+        "analysis_ru": str(analysis_ru)[:1200],
+        "impact": clean_impact,
+        "category": fallback["category"],
+        "assets": fallback["assets"],
+        "method": data.get("method") or fallback.get("method", "rule-based"),
+    }
 
 
 async def analyze(
@@ -58,20 +92,47 @@ async def analyze(
     category: str,
     assets: List[str],
 ) -> Dict[str, Any]:
-    """Structured analysis. OpenAI if key set; else conservative rules. No invented facts."""
     text = f"{item.title}. {item.summary}"
     bias = _bias_from_text(text)
     importance = _importance(text, category)
     confidence = "LOW" if bias in ("NEUTRAL", "UNCERTAIN") else "MEDIUM"
-
     impact = {a: bias for a in assets} if assets else {"MARKET": bias}
+
+    # Technical / sentiment without market data → unavailable
+    if category in ("technical", "sentiment"):
+        analysis_ru = (
+            f"Категория {CATEGORIES.get(category, {}).get('name_ru', category)}: "
+            "для сигналов нужны рыночные данные. Сейчас: DATA UNAVAILABLE. "
+            "Заголовок не используется как техсигнал."
+        )
+        return {
+            "bias": "UNCERTAIN",
+            "importance": "LOW",
+            "confidence": "LOW",
+            "impact": {},
+            "analysis_ru": analysis_ru,
+            "category": category,
+            "assets": [],
+            "method": "unavailable",
+        }
 
     analysis_ru = (
         f"Событие: категория {CATEGORIES.get(category, {}).get('name_ru', category)}. "
-        f"Направление (эвристика по тексту): {bias}. "
-        f"Активы: {', '.join(assets) if assets else 'рынок в целом'}. "
-        f"Без выдуманных цифр и цен. При нехватке данных — Uncertain."
+        f"Направление (эвристика): {bias}. "
+        f"Активы: {', '.join(assets) if assets else 'не определены'}. "
+        f"Без выдуманных цифр. При нехватке данных — Uncertain."
     )
+
+    fallback = {
+        "bias": bias,
+        "importance": importance,
+        "confidence": confidence,
+        "impact": impact,
+        "analysis_ru": analysis_ru,
+        "category": category,
+        "assets": assets,
+        "method": "rule-based",
+    }
 
     if settings.openai_api_key:
         try:
@@ -80,17 +141,18 @@ async def analyze(
             client = AsyncOpenAI(api_key=settings.openai_api_key)
             prompt = (
                 "You are a professional financial news analyst.\n"
-                "Rules:\n"
-                "- Use ONLY the provided title and text.\n"
-                "- Do NOT invent prices, percentages, volumes or events.\n"
-                "- If direction is unclear, set bias to UNCERTAIN.\n"
-                "- confidence: LOW|MEDIUM|HIGH based on text clarity.\n"
+                "Rules: Use ONLY the provided title and text. "
+                "Do NOT invent prices, percentages, volumes or events. "
+                "If direction is unclear, bias=UNCERTAIN. "
+                "CRITICAL only for exceptional systemic events, not routine data.\n"
                 "Reply JSON only:\n"
                 '{"bias":"BULLISH|BEARISH|NEUTRAL|UNCERTAIN",'
                 '"importance":"LOW|MEDIUM|HIGH|CRITICAL",'
                 '"confidence":"LOW|MEDIUM|HIGH",'
-                '"analysis_ru":"2-4 sentences in Russian: what happened, why it matters, short-term vs medium-term impact",'
-                '"assets_impact":{"ASSET":"BULLISH|BEARISH|NEUTRAL|UNCERTAIN"}}'
+                '"analysis_ru":"2-4 sentences in Russian: what happened, why it matters, '
+                'short-term vs medium-term impact",'
+                '"assets_impact":{"ASSET":"BULLISH|BEARISH|NEUTRAL|UNCERTAIN"},'
+                '"method":"openai"}'
                 f"\n\nTitle: {item.title}\nText: {item.summary[:2000]}\n"
                 f"Category: {category}\nSuggested assets: {assets}"
             )
@@ -102,21 +164,9 @@ async def analyze(
                 response_format={"type": "json_object"},
             )
             data = json.loads(resp.choices[0].message.content)
-            bias = data.get("bias") or bias
-            importance = data.get("importance") or importance
-            confidence = data.get("confidence") or confidence
-            analysis_ru = data.get("analysis_ru") or analysis_ru
-            if isinstance(data.get("assets_impact"), dict) and data["assets_impact"]:
-                impact = data["assets_impact"]
+            data["method"] = "openai"
+            return _validate_analysis(data, fallback)
         except Exception as e:
             logger.warning(f"AI analyze fallback to rules: {e}")
 
-    return {
-        "bias": bias,
-        "importance": importance,
-        "confidence": confidence,
-        "impact": impact,
-        "analysis_ru": analysis_ru,
-        "category": category,
-        "assets": assets,
-    }
+    return fallback

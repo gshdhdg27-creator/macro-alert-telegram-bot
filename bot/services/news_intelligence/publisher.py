@@ -1,8 +1,7 @@
-"""Publish analyzed news to Telegram — DB-backed dedupe, safe sort."""
+"""Publish analyzed news to Telegram — DB dedupe, full text + optional photo."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from aiogram import Bot
 from loguru import logger
@@ -19,7 +18,6 @@ settings = get_settings()
 
 
 def _sort_key(item: RawNews):
-    """Safe sort: missing dates go last, never compare datetime with str."""
     if item.published is not None:
         return (0, item.published)
     return (1, datetime.min.replace(tzinfo=timezone.utc))
@@ -48,11 +46,10 @@ async def _mark_published(item: RawNews, category: str) -> None:
             await session.commit()
         except Exception as e:
             await session.rollback()
-            logger.warning(f"dedupe mark failed (likely race): {e}")
+            logger.warning(f"dedupe mark failed: {e}")
 
 
-async def process_and_publish(bot: Bot, max_publish: int = 3) -> int:
-    """Collect → classify → analyze → publish. DB dedupe survives restarts."""
+async def process_and_publish(bot: Bot, max_publish: int = 2) -> int:
     raw_list = collect_from_rss()
     published = 0
     raw_list.sort(key=_sort_key, reverse=True)
@@ -66,7 +63,6 @@ async def process_and_publish(bot: Bot, max_publish: int = 3) -> int:
             analysis = await analyze(item, category, assets)
             importance = analysis.get("importance", "MEDIUM")
             if importance not in ("MEDIUM", "HIGH", "CRITICAL"):
-                # still mark so we don't re-analyze forever
                 await _mark_published(item, category)
                 continue
 
@@ -89,32 +85,24 @@ async def process_and_publish(bot: Bot, max_publish: int = 3) -> int:
             )
             kb = news_inline_kb(item, category)
 
+            # Photo separately: never silently truncate full analysis into caption
             try:
-                if item.image:
+                if item.image and item.image.startswith("https://"):
                     try:
                         await bot.send_photo(
                             chat_id=settings.admin_id,
                             photo=item.image,
-                            caption=text[:1024],
-                            parse_mode="HTML",
-                            reply_markup=kb,
+                            caption=None,
                         )
-                    except Exception:
-                        await bot.send_message(
-                            chat_id=settings.admin_id,
-                            text=text,
-                            parse_mode="HTML",
-                            reply_markup=kb,
-                            disable_web_page_preview=False,
-                        )
-                else:
-                    await bot.send_message(
-                        chat_id=settings.admin_id,
-                        text=text,
-                        parse_mode="HTML",
-                        reply_markup=kb,
-                        disable_web_page_preview=False,
-                    )
+                    except Exception as pe:
+                        logger.debug(f"photo skip: {pe}")
+                await bot.send_message(
+                    chat_id=settings.admin_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=kb,
+                    disable_web_page_preview=False,
+                )
             except Exception as e:
                 logger.error(f"Telegram send error: {e}")
                 continue
@@ -151,7 +139,6 @@ async def process_and_publish(bot: Bot, max_publish: int = 3) -> int:
 
 
 async def get_category_news(category: str, limit: int = 5) -> list:
-    """On-demand category feed for user buttons."""
     raw_list = collect_from_rss(max_per_feed=12)
     raw_list.sort(key=_sort_key, reverse=True)
     out = []
