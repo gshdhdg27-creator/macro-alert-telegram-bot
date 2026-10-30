@@ -1,4 +1,4 @@
-"""Telegram HTML message formatter — Macro Alert / Woj visual style."""
+"""Telegram HTML message formatter — Macro Alert visual style."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -38,7 +38,6 @@ def format_news_message(
     impact = analysis.get("impact") or {}
     assets = analysis.get("assets") or []
 
-    when = ""
     if item.published:
         when = item.published.astimezone(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
     else:
@@ -52,9 +51,12 @@ def format_news_message(
     assets_str = ", ".join(assets) if assets else "—"
     summary = item.summary[:500] + ("…" if len(item.summary) > 500 else "") if item.summary else item.title
 
+    # FIX: Unicode dash must be a string literal, not a bare identifier
+    sep = "━" * 18
+
     text = (
         f"{IMP_EMOJI.get(importance, '🟠')} <b>{pub_type}</b> | {emoji} <b>{cat_name}</b>\n"
-        f"{━ * 18}\n\n"
+        f"{sep}\n\n"
         f"<b>{item.title}</b>\n"
         f"<i>{when}</i>\n\n"
         f"<b>ЧТО ПРОИЗОШЛО?</b>\n"
@@ -90,6 +92,7 @@ def news_inline_kb(item: RawNews, category: str) -> InlineKeyboardMarkup:
 
 def categories_kb(lang: str = "ru") -> InlineKeyboardMarkup:
     from bot.services.news_intelligence.categories import PRIMARY_CATS, CATEGORIES
+
     rows = []
     row = []
     for key in PRIMARY_CATS:

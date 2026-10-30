@@ -1,5 +1,5 @@
-"""News categories for Trading AI News Intelligence."""
-from typing import Dict, List
+"""News categories for Trading AI News Intelligence — all 10 markets."""
+from typing import Dict
 
 CATEGORIES: Dict[str, dict] = {
     "forex": {
@@ -125,10 +125,20 @@ CATEGORIES: Dict[str, dict] = {
     },
 }
 
+# All 10 categories in the UI
 PRIMARY_CATS = [
-    "forex", "crypto", "gold", "stocks",
-    "economic", "central_banks", "geopolitics", "whales",
+    "forex",
+    "crypto",
+    "gold",
+    "stocks",
+    "economic",
+    "central_banks",
+    "geopolitics",
+    "whales",
+    "technical",
+    "sentiment",
 ]
+
 
 def category_list_text(lang: str = "ru") -> str:
     lines = []
