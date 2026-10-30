@@ -1,4 +1,4 @@
-"""AI / rule-based market analysis. Never invents prices or events."""
+"""AI / rule-based market analysis. Never invents prices, facts or events."""
 from __future__ import annotations
 
 import json
@@ -12,6 +12,7 @@ from bot.services.news_intelligence.collector import RawNews
 
 settings = get_settings()
 
+# Keyword hints are a weak prior only — not definitive direction
 BULLISH_HINTS = [
     "surge", "rally", "rise", "gain", "beat", "stronger", "growth", "approval",
     "inflow", "record high", "boost", "optimistic", "cut rates", "stimulus",
@@ -23,14 +24,15 @@ BEARISH_HINTS = [
 
 
 def _bias_from_text(text: str) -> str:
+    """Weak heuristic. Prefer UNCERTAIN when signals conflict or are weak."""
     t = text.lower()
     b = sum(1 for h in BULLISH_HINTS if h in t)
     r = sum(1 for h in BEARISH_HINTS if h in t)
-    if b > r and b > 0:
+    if b >= 2 and b > r:
         return "BULLISH"
-    if r > b and r > 0:
+    if r >= 2 and r > b:
         return "BEARISH"
-    if b == r and b > 0:
+    if b > 0 or r > 0:
         return "UNCERTAIN"
     return "NEUTRAL"
 
@@ -56,50 +58,63 @@ async def analyze(
     category: str,
     assets: List[str],
 ) -> Dict[str, Any]:
-    """Return structured analysis. Uses OpenAI if key set, else rules."""
+    """Structured analysis. OpenAI if key set; else conservative rules. No invented facts."""
     text = f"{item.title}. {item.summary}"
     bias = _bias_from_text(text)
     importance = _importance(text, category)
+    confidence = "LOW" if bias in ("NEUTRAL", "UNCERTAIN") else "MEDIUM"
 
     impact = {a: bias for a in assets} if assets else {"MARKET": bias}
 
     analysis_ru = (
-        f"Событие относится к категории {CATEGORIES.get(category, {}).get('name_ru', category)}. "
-        f"Оценка влияния: {bias}. "
-        f"Затронутые активы: {', '.join(assets) if assets else 'рынок в целом'}. "
-        f"Вывод основан только на тексте источника, без выдуманных цифр."
+        f"Событие: категория {CATEGORIES.get(category, {}).get('name_ru', category)}. "
+        f"Направление (эвристика по тексту): {bias}. "
+        f"Активы: {', '.join(assets) if assets else 'рынок в целом'}. "
+        f"Без выдуманных цифр и цен. При нехватке данных — Uncertain."
     )
 
     if settings.openai_api_key:
         try:
             from openai import AsyncOpenAI
+
             client = AsyncOpenAI(api_key=settings.openai_api_key)
             prompt = (
-                "You are a financial news analyst. Analyze ONLY the given text. "
-                "Do not invent numbers, prices or events. Reply JSON: "
-                '{"bias":"BULLISH|BEARISH|NEUTRAL|UNCERTAIN","importance":"LOW|MEDIUM|HIGH|CRITICAL",'
-                '"analysis_ru":"2-3 sentences in Russian","assets_impact":{"ASSET":"BULLISH|..."}}'
-                f"\n\nTitle: {item.title}\nText: {item.summary[:2000]}\nCategory: {category}\nAssets: {assets}"
+                "You are a professional financial news analyst.\n"
+                "Rules:\n"
+                "- Use ONLY the provided title and text.\n"
+                "- Do NOT invent prices, percentages, volumes or events.\n"
+                "- If direction is unclear, set bias to UNCERTAIN.\n"
+                "- confidence: LOW|MEDIUM|HIGH based on text clarity.\n"
+                "Reply JSON only:\n"
+                '{"bias":"BULLISH|BEARISH|NEUTRAL|UNCERTAIN",'
+                '"importance":"LOW|MEDIUM|HIGH|CRITICAL",'
+                '"confidence":"LOW|MEDIUM|HIGH",'
+                '"analysis_ru":"2-4 sentences in Russian: what happened, why it matters, short-term vs medium-term impact",'
+                '"assets_impact":{"ASSET":"BULLISH|BEARISH|NEUTRAL|UNCERTAIN"}}'
+                f"\n\nTitle: {item.title}\nText: {item.summary[:2000]}\n"
+                f"Category: {category}\nSuggested assets: {assets}"
             )
             resp = await client.chat.completions.create(
                 model=settings.openai_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                max_tokens=350,
+                max_tokens=400,
                 response_format={"type": "json_object"},
             )
             data = json.loads(resp.choices[0].message.content)
             bias = data.get("bias") or bias
             importance = data.get("importance") or importance
+            confidence = data.get("confidence") or confidence
             analysis_ru = data.get("analysis_ru") or analysis_ru
-            if isinstance(data.get("assets_impact"), dict):
+            if isinstance(data.get("assets_impact"), dict) and data["assets_impact"]:
                 impact = data["assets_impact"]
         except Exception as e:
-            logger.warning(f"AI analyze fallback: {e}")
+            logger.warning(f"AI analyze fallback to rules: {e}")
 
     return {
         "bias": bias,
         "importance": importance,
+        "confidence": confidence,
         "impact": impact,
         "analysis_ru": analysis_ru,
         "category": category,

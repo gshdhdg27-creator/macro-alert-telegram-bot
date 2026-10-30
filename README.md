@@ -1,117 +1,79 @@
-# 📊 Macro Alert Telegram Bot
+# Macro Alert — Trading AI News Intelligence
 
-Персональный Telegram-бот для мониторинга макроэкономических новостей, экономического календаря (ФРС, CPI, NFP, ЕЦБ и др.) и срочных инфоповодов по ключевым активам с AI-фильтрацией и мгновенными алертами.
+Personal Telegram bot + Mini App for macroeconomic alerts, real economic calendar, and AI-assisted market news.
 
-**Стек:** Python 3.11 · aiogram 3.x · SQLite · APScheduler · OpenAI · Docker
+## Architecture
 
----
+| Component | Stack | Deploy |
+|-----------|--------|--------|
+| Telegram bot | Python 3.11+, aiogram 3, APScheduler, SQLAlchemy | VPS / local / any long-running host |
+| Mini App | Static HTML/JS (Tailwind, Lightweight Charts) | Vercel (`miniapp/` root) |
+| Database | SQLite (aiosqlite) by default | file `data/bot.db` |
 
-## Возможности
+**Do not deploy the Python bot on Vercel.** Vercel only hosts the Mini App static files.
 
-- 13 активов + системные разделы (календарь, настройки)
-- Авто-алерты за 15 мин до High Impact событий
-- Мгновенный Actual vs Forecast
-- Breaking news с AI-фильтрацией (важность + теги + summary на RU/EN)
-- Гибкие подписки, только High Impact, тихий режим
-- История алертов
-- Двуязычный интерфейс (RU / EN)
-- Легко расширяется новыми активами (просто конфиг)
+## Features
 
----
+- 10 news categories: Forex, Crypto, Gold, Stocks, Economic, Central Banks, Geopolitics, Whales, Technical, Sentiment
+- RSS collector (BBC, CoinDesk, Fed, Reuters, CNBC) — **no invented news**
+- Persistent deduplication (`published_news` table)
+- Economic calendar from pipatlas / faireconomy (optional FMP key) — **no placeholder events**
+- 15-minute pre-alerts for high-impact calendar events
+- Mini App: charts for Binance pairs (real WS), FX spot rates, in-app news detail
 
-## Быстрый старт (на Mac Station)
+## Environment variables
 
-### 1. Клонировать
-```bash
-git clone https://github.com/gshdhdg27-creator/macro-alert-telegram-bot.git
-cd macro-alert-telegram-bot
+Copy `.env.example` → `.env`:
+
 ```
-
-### 2. Создать `.env`
-```bash
-cp .env.example .env
-```
-
-Заполни:
-```env
-BOT_TOKEN=123456:ABC-DEF...          # от @BotFather
-ADMIN_ID=123456789                   # твой Telegram ID (@userinfobot)
-OPENAI_API_KEY=sk-...                # для AI-фильтрации (рекомендуется)
-FMP_API_KEY=                         # опционально (FinancialModelingPrep)
+BOT_TOKEN=...
+ADMIN_ID=...
+OPENAI_API_KEY=          # optional, enables stronger analysis
+OPENAI_MODEL=gpt-4o-mini
+FMP_API_KEY=             # optional calendar
 DEFAULT_TIMEZONE=Europe/Moscow
+DATABASE_URL=sqlite+aiosqlite:///./data/bot.db
+MINIAPP_URL=https://your-app.vercel.app
 ```
 
-### 3. Запуск через Docker (рекомендуется)
-```bash
-docker compose up -d --build
-```
+## Run the bot (local / VPS)
 
-Логи:
 ```bash
-docker compose logs -f bot
-```
-
-### 4. Или без Docker
-```bash
-python -m venv venv
-source venv/bin/activate   # macOS/Linux
-pip install -r requirements.txt
+pip install -r requirements.bot.txt
 python -m bot.main
 ```
 
----
+## Deploy Mini App (Vercel)
 
-## Структура проекта
+1. Root Directory = `miniapp`
+2. Framework = Other / static
+3. Redeploy after each push to `miniapp/`
 
-```
-bot/
-├── main.py                 # Точка входа + scheduler
-├── config.py               # Настройки + ASSETS (легко добавлять новые)
-├── handlers/               # Команды и кнопки
-├── keyboards/              # Reply + Inline клавиатуры
-├── models/                 # SQLAlchemy (UserSettings, AlertHistory)
-├── services/               # Календарь, новости, AI, алерты
-└── utils/i18n.py           # Переводы
-```
+## Market data policy
 
----
+| Asset | Source | Notes |
+|-------|--------|-------|
+| BTC, ETH | Binance public API + WS | Real candles and live trades |
+| EUR/USD, GBP/USD, USD/JPY | exchangerate-api.com | Spot only (no OHLC history free) |
+| Gold, indices, oil | — | Shown as **DATA UNAVAILABLE** until a verified free/paid API is configured |
 
-## Как добавить новый актив
+**Simulated candlesticks are not used as live market data.**
 
-Открой `bot/config.py` → словарь `ASSETS` и добавь новый ключ:
+## Critical fixes (recent)
 
-```python
-"new_asset": {
-    "emoji": "🔥",
-    "name_ru": "Новый актив",
-    "name_en": "New Asset",
-    "tags": ["NEW", "TAG"],
-    "keywords": ["keyword1", "keyword2"],
-},
-```
+1. `formatter.py` syntax: Unicode separator must be a string (`"━" * 18`)
+2. News sort: missing dates no longer crash comparisons
+3. DB-backed `PublishedNews` dedupe across restarts
+4. Calendar: removed static demo CPI/NFP placeholders
+5. All 10 categories in PRIMARY_CATS
 
-Готово — меню и фильтрация подхватят автоматически.
+## Limitations
 
----
+- Without `OPENAI_API_KEY`, bias uses conservative keyword heuristics (often UNCERTAIN)
+- Free FX APIs do not provide full OHLC history
+- Gold/index/oil charts need a paid or additional provider
+- Bot must run 24/7 on a server for live polling (not serverless)
 
-## Источники данных
+## License
 
-- **Календарь**: FinancialModelingPrep (если ключ) + fallback
-- **Новости**: Reuters, Bloomberg, CoinDesk, Fed RSS + AI-фильтр
-- **AI**: GPT-4o-mini (можно заменить на другой)
-
-Задержки алертов: 5–10 секунд (зависит от источника).
-
----
-
-## Деплой
-
-Основной режим — **Docker на твоём Mac Station** (или любом сервере).
-
-Vercel подключён к репозиторию для возможного будущего webhook-режима / админ-панели, но текущий бот использует long-polling + scheduler, поэтому основной запуск — локально/на Mac.
-
----
-
-## Лицензия
-
-Private — только для владельца репозитория.
+Private personal use.
