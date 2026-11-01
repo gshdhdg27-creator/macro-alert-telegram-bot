@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import json
 import os
-import tempfile
 import time
 from urllib.parse import urlencode
 
@@ -38,12 +37,12 @@ async def client(monkeypatch, tmp_path):
     os.environ["BOT_TOKEN"] = BOT_TOKEN
     os.environ["ADMIN_ID"] = str(ADMIN_ID)
     os.environ["DATABASE_URL"] = url
-    os.environ["CORS_ORIGINS"] = "http://testserver"
+    os.environ["CORS_ORIGINS"] = "http://testserver,http://localhost:3000"
 
-    # Reset settings cache if any
     from bot.config import get_settings
 
-    get_settings.cache_clear() if hasattr(get_settings, "cache_clear") else None
+    if hasattr(get_settings, "cache_clear"):
+        get_settings.cache_clear()
 
     import bot.config as cfg
 
@@ -68,17 +67,20 @@ async def client(monkeypatch, tmp_path):
     dbmod.async_session = async_sessionmaker(dbmod.engine, class_=AsyncSession, expire_on_commit=False)
     await dbmod.init_db()
 
+    # Import app after env/CORS is set — reload origins by patching module list
     import api.app as app_mod
 
     monkeypatch.setattr(app_mod, "settings", S())
     monkeypatch.setattr(app_mod, "async_session", dbmod.async_session)
+    # CORS already loaded at import; testserver is in default list after fix
 
     transport = ASGITransport(app=app_mod.app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         yield ac
 
     await dbmod.engine.dispose()
-    get_settings.cache_clear() if hasattr(get_settings, "cache_clear") else None
+    if hasattr(get_settings, "cache_clear"):
+        get_settings.cache_clear()
 
 
 @pytest.mark.asyncio
@@ -115,8 +117,7 @@ async def test_settings_get_patch_persist(client):
 
     r = await client.get("/api/me/settings", headers=h)
     assert r.status_code == 200
-    body = r.json()
-    assert "subscribed_assets" in body
+    assert "subscribed_assets" in r.json()
 
     r2 = await client.patch(
         "/api/me/settings",

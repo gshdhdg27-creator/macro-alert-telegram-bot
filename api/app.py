@@ -27,19 +27,26 @@ from bot.services.news_intelligence.publisher import (
 settings = get_settings()
 app = FastAPI(title="Macro Alert API", version="1.1.0")
 
-# Explicit CORS — never default to * in production if CORS_ORIGINS set
 _raw = os.getenv("CORS_ORIGINS", "").strip()
 if not _raw:
-    # Dev fallback: Telegram WebView origins + localhost
     _origins = [
         "https://web.telegram.org",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://testserver",  # httpx ASGITransport base_url
     ]
 else:
     _origins = [o.strip() for o in _raw.split(",") if o.strip()]
     for o in _origins:
-        if o != "*" and not (o.startswith("https://") or o.startswith("http://localhost") or o.startswith("http://127.0.0.1")):
+        if o == "*":
+            raise RuntimeError("Wildcard CORS is not allowed in production CORS_ORIGINS")
+        ok = (
+            o.startswith("https://")
+            or o.startswith("http://localhost")
+            or o.startswith("http://127.0.0.1")
+            or o == "http://testserver"
+        )
+        if not ok:
             raise RuntimeError(f"Invalid CORS origin (must be https or localhost): {o}")
 
 app.add_middleware(

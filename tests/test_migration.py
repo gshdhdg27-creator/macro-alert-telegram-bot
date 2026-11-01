@@ -3,7 +3,7 @@ import os
 import tempfile
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
@@ -65,26 +65,23 @@ async def test_notifications_enabled_migration(monkeypatch):
             row = (
                 await conn.execute(
                     text(
-                        "SELECT user_id, notifications_enabled FROM user_settings "
-                        "WHERE user_id=7257793582"
+                        "SELECT user_id, notifications_enabled, language, quiet_mode "
+                        "FROM user_settings WHERE user_id=7257793582"
                     )
                 )
             ).fetchone()
             assert row is not None
             assert row[0] == 7257793582
             assert int(row[1]) == 1
+            assert row[2] == "ru"
+            assert int(row[3]) == 0
 
-        from bot.models.db import UserSettings
+        # Idempotent
+        await dbmod.migrate_schema()
+        async with dbmod.engine.begin() as conn:
+            n = (await conn.execute(text("SELECT COUNT(*) FROM user_settings"))).scalar()
+            assert n == 1
 
-        async with dbmod.async_session() as session:
-            r = await session.execute(
-                select(UserSettings).where(UserSettings.user_id == 7257793582)
-            )
-            u = r.scalar_one()
-            assert u.user_id == 7257793582
-            assert bool(u.notifications_enabled) is True
-
-        await dbmod.migrate_schema()  # idempotent
         await dbmod.engine.dispose()
     finally:
         try:
