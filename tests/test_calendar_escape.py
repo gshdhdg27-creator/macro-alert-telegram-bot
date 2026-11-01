@@ -1,5 +1,6 @@
 """Calendar HTML escaping — security properties, not substring bans."""
 import html
+import re
 
 from bot.services.calendar_service import _e, stable_event_id
 
@@ -17,21 +18,23 @@ def test_escape_amp():
 
 def test_escape_quotes_for_attributes():
     escaped = _e('USD" onclick="x')
-    assert '"' not in escaped or "&quot;" in escaped
     assert "&quot;" in escaped
+    # raw double-quote characters must not remain unescaped
+    assert '"' not in escaped
 
 
 def test_img_onerror_not_executable_markup():
     name = '<img src=x onerror=alert(1)>'
     currency = 'USD" onclick="evil'
+    # Only our intentional Telegram tags around escaped content
     line = f"⭐️ <b>{_e(currency)}</b> | {_e(name)}"
-    # No raw HTML tags from untrusted content
     assert "<img" not in line
     assert "&lt;img" in line
-    # Quotes escaped so attributes cannot break out of Telegram HTML
     assert "&quot;" in line
-    # Word onerror may remain as text; that is safe once tags/quotes are escaped
-    assert line.count("<") == line.count("<b>") + line.count("</b>")  # only our markup
+    # Untrusted content must not introduce angle-bracket tags
+    # Strip our own <b>...</b> wrappers and ensure no remaining '<' from payload
+    stripped = re.sub(r"</?b>", "", line)
+    assert "<" not in stripped
 
 
 def test_stable_event_id_consistent():
