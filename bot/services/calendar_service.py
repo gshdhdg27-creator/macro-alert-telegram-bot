@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import html
-from datetime import datetime, timedelta
-from typing import List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Tuple
 
 import httpx
 import pytz
@@ -12,7 +12,7 @@ from loguru import logger
 from sqlalchemy import select
 
 from bot.config import get_settings
-from bot.models.db import CalendarAlert, async_session
+from bot.models.db import CalendarAlert, CalendarEventState, async_session
 
 settings = get_settings()
 
@@ -55,6 +55,12 @@ def _has_actual(value) -> bool:
         return False
     s = str(value).strip()
     return bool(s) and s not in ("—", "-", "n/a", "N/A", "")
+
+
+def _norm_actual(value) -> str:
+    if not _has_actual(value):
+        return ""
+    return str(value).strip()
 
 
 async def _fetch_pipatlas() -> list:
@@ -234,8 +240,70 @@ async def _mark_alerted(event_id: str, kind: str, title: str) -> None:
             logger.warning(f"calendar dedupe mark failed: {e}")
 
 
+async def _get_event_state(event_id: str) -> Optional[CalendarEventState]:
+    async with async_session() as session:
+        r = await session.execute(
+            select(CalendarEventState).where(CalendarEventState.event_id == event_id).limit(1)
+        )
+        return r.scalar_one_or_none()
+
+
+async def _upsert_event_state(event_id: str, actual_norm: str) -> None:
+    async with async_session() as session:
+        try:
+            r = await session.execute(
+                select(CalendarEventState).where(CalendarEventState.event_id == event_id).limit(1)
+            )
+            row = r.scalar_one_or_none()
+            now = datetime.now(timezone.utc)
+            if row:
+                row.last_actual = actual_norm or None
+                row.observed_at = now
+            else:
+                session.add(
+                    CalendarEventState(
+                        event_id=event_id,
+                        last_actual=actual_norm or None,
+                        observed_at=now,
+                    )
+                )
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.warning(f"event state upsert failed: {e}")
+
+
+async def _should_notify_actual(event_id: str, actual_raw) -> Tuple[bool, str]:
+    """
+    First observation: establish baseline, never notify.
+    Later: notify only if previous was empty and now populated,
+    or previous populated value genuinely changed (revision).
+    """
+    current = _norm_actual(actual_raw)
+    state = await _get_event_state(event_id)
+
+    if state is None:
+        # Baseline — record and skip alert
+        await _upsert_event_state(event_id, current)
+        return False, current
+
+    prev = (state.last_actual or "").strip()
+
+    if not prev and current:
+        # missing → populated
+        return True, current
+
+    if prev and current and prev != current:
+        # revision of Actual (rare but real)
+        return True, current
+
+    # unchanged or still empty
+    await _upsert_event_state(event_id, current)
+    return False, current
+
+
 async def poll_calendar(bot) -> None:
-    """15-min pre-alerts + actual-release alerts. Mark only after successful delivery."""
+    """15-min pre-alerts + actual-release (only missing→populated after baseline)."""
     logger.debug("Calendar poll tick")
     try:
         from bot.services.alert_service import send_alert_to_user
@@ -258,31 +326,38 @@ async def poll_calendar(bot) -> None:
             forecast = e.get("forecast") or e.get("estimate") or "—"
             previous = e.get("previous") or "—"
 
-            # --- Actual release (high impact only) ---
-            if impact in ("high", "red") and _has_actual(actual):
-                if not await _already_alerted(eid, "actual"):
-                    text = (
-                        f"📢 <b>Actual released</b>\n"
-                        f"⭐️⭐️⭐️ <b>{_e(currency)}</b> | {_e(name)}\n"
-                        f"🕒 {_e(date_str)}\n"
-                        f"Actual: <code>{_e(actual)}</code>  "
-                        f"Forecast: <code>{_e(forecast)}</code>  "
-                        f"Prev: <code>{_e(previous)}</code>\n"
-                        f"<i>Сравнение с прогнозом показано как есть. "
-                        f"Рыночная реакция не выдумана.</i>"
-                    )
-                    ok = await send_alert_to_user(
-                        bot,
-                        alert_type="calendar_actual",
-                        title=f"Actual: {name}"[:200],
-                        body=text,
-                        asset_tags=currency,
-                        importance="high",
-                        raw_data={"event_id": eid, "actual": str(actual)},
-                    )
-                    if ok:
-                        await _mark_alerted(eid, "actual", name)
-                        logger.info(f"Calendar actual alert: {name}")
+            # --- Actual release tracking (high impact) ---
+            if impact in ("high", "red"):
+                should, current = await _should_notify_actual(eid, actual)
+                if should and current:
+                    if not await _already_alerted(eid, "actual"):
+                        text = (
+                            f"📢 <b>Actual released</b>\n"
+                            f"⭐️⭐️⭐️ <b>{_e(currency)}</b> | {_e(name)}\n"
+                            f"🕒 {_e(date_str)}\n"
+                            f"Actual: <code>{_e(current)}</code>  "
+                            f"Forecast: <code>{_e(forecast)}</code>  "
+                            f"Prev: <code>{_e(previous)}</code>\n"
+                            f"<i>Сравнение с прогнозом показано как есть. "
+                            f"Рыночная реакция не выдумана.</i>"
+                        )
+                        ok = await send_alert_to_user(
+                            bot,
+                            alert_type="calendar_actual",
+                            title=f"Actual: {name}"[:200],
+                            body=text,
+                            asset_tags=currency,
+                            importance="high",
+                            raw_data={"event_id": eid, "actual": current},
+                        )
+                        if ok:
+                            await _mark_alerted(eid, "actual", name)
+                            await _upsert_event_state(eid, current)
+                            logger.info(f"Calendar actual alert: {name}")
+                    else:
+                        await _upsert_event_state(eid, current)
+                elif current:
+                    await _upsert_event_state(eid, current)
 
             # --- 15-min pre-alert ---
             if impact not in ("high", "red"):
