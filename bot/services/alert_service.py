@@ -1,4 +1,7 @@
-"""Send alerts respecting quiet mode, importance, and asset subscriptions."""
+"""Send alerts respecting quiet mode, importance, subscriptions, notifications_enabled.
+
+Returns True only when Telegram successfully received the message.
+"""
 from typing import Optional, Dict, Any
 
 from aiogram import Bot
@@ -12,10 +15,6 @@ settings = get_settings()
 
 
 def _tags_match_subscriptions(asset_tags: str, subscribed: dict) -> bool:
-    """
-    Return True if alert is relevant to user subscriptions.
-    Empty tags → broadcast (calendar/global).
-    """
     if not asset_tags:
         return True
     if not subscribed:
@@ -47,7 +46,11 @@ async def send_alert_to_user(
     asset_tags: str = "",
     importance: str = "medium",
     raw_data: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> bool:
+    """
+    Return True only if Telegram accepted the message.
+    Return False if suppressed by prefs or delivery failed.
+    """
     async with async_session() as session:
         result = await session.execute(
             select(UserSettings).where(UserSettings.user_id == settings.admin_id)
@@ -55,20 +58,25 @@ async def send_alert_to_user(
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.warning("No user settings found for admin")
-            return
+            logger.warning("No user settings found for admin — alert not sent")
+            return False
+
+        if getattr(user, "notifications_enabled", True) is False:
+            logger.info("Notifications disabled — alert suppressed")
+            return False
 
         if user.quiet_mode:
             logger.info("Quiet mode active — alert suppressed")
-            return
+            return False
 
         imp = (importance or "medium").lower()
         if user.only_high_impact and imp not in ("high", "critical"):
-            return
+            logger.info("High-impact filter — alert suppressed")
+            return False
 
         if not _tags_match_subscriptions(asset_tags, user.subscribed_assets or {}):
             logger.info(f"Alert skipped — not in subscriptions: {asset_tags}")
-            return
+            return False
 
         try:
             await bot.send_message(
@@ -79,7 +87,7 @@ async def send_alert_to_user(
             )
         except Exception as e:
             logger.error(f"Failed to send alert: {e}")
-            return
+            return False
 
         history = AlertHistory(
             user_id=settings.admin_id,
@@ -93,3 +101,4 @@ async def send_alert_to_user(
         session.add(history)
         await session.commit()
         logger.info(f"Alert sent & saved: {title[:80]}")
+        return True

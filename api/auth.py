@@ -1,17 +1,27 @@
-"""Telegram WebApp initData HMAC verification.
-Never trust initDataUnsafe or client-supplied user id alone.
+"""Telegram WebApp initData HMAC verification (official algorithm).
+
+https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+
+secret_key = HMAC_SHA256(<bot_token>, "WebAppData")
+hash       = HMAC_SHA256(secret_key, data_check_string)
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import parse_qsl
 
 from bot.config import get_settings
+
+# Configurable lifetime (seconds). Default 1 hour.
+DEFAULT_MAX_AGE = int(os.getenv("INITDATA_MAX_AGE", "3600"))
+# Reject auth_date more than this many seconds in the future (clock skew).
+MAX_FUTURE_SKEW = int(os.getenv("INITDATA_MAX_FUTURE_SKEW", "120"))
 
 
 @dataclass
@@ -29,15 +39,29 @@ class AuthError(Exception):
         super().__init__(message)
 
 
+def compute_webapp_hash(data_check_string: str, bot_token: str) -> str:
+    """Official Telegram Mini App HMAC.
+
+    secret_key = HMAC_SHA256(key=bot_token, message=b"WebAppData")
+    hash       = HMAC_SHA256(key=secret_key, message=data_check_string)
+    """
+    secret_key = hmac.new(
+        bot_token.encode("utf-8"),
+        b"WebAppData",
+        hashlib.sha256,
+    ).digest()
+    return hmac.new(
+        secret_key,
+        data_check_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def verify_init_data(
     init_data: str,
     bot_token: Optional[str] = None,
-    max_age_seconds: int = 86400,
+    max_age_seconds: Optional[int] = None,
 ) -> TelegramUser:
-    """
-    Validate Telegram Mini App initData per official docs:
-    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
     if not init_data or not isinstance(init_data, str):
         raise AuthError("Missing initData")
 
@@ -45,16 +69,15 @@ def verify_init_data(
     if not token:
         raise AuthError("Server misconfigured", 500)
 
+    max_age = DEFAULT_MAX_AGE if max_age_seconds is None else max_age_seconds
+
     parsed = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = parsed.pop("hash", None)
     if not received_hash:
         raise AuthError("Missing hash")
 
-    # Data-check-string: key=value sorted by key, joined with \n
     data_check = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-
-    secret_key = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
-    calculated = hmac.new(secret_key, data_check.encode(), hashlib.sha256).hexdigest()
+    calculated = compute_webapp_hash(data_check, token)
 
     if not hmac.compare_digest(calculated, received_hash):
         raise AuthError("Invalid initData signature")
@@ -65,7 +88,10 @@ def verify_init_data(
     except (TypeError, ValueError):
         raise AuthError("Invalid auth_date")
 
-    if max_age_seconds > 0 and (time.time() - auth_ts) > max_age_seconds:
+    now = time.time()
+    if auth_ts - now > MAX_FUTURE_SKEW:
+        raise AuthError("auth_date is in the future")
+    if max_age > 0 and (now - auth_ts) > max_age:
         raise AuthError("initData expired", 401)
 
     user_raw = parsed.get("user")

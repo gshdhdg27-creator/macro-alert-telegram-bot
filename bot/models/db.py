@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+from loguru import logger
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     JSON,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -55,8 +57,6 @@ class AlertHistory(Base):
 
 
 class PublishedNews(Base):
-    """Telegram publish deduplication."""
-
     __tablename__ = "published_news"
     __table_args__ = (UniqueConstraint("news_id", name="uq_published_news_id"),)
 
@@ -70,21 +70,17 @@ class PublishedNews(Base):
 
 
 class CalendarAlert(Base):
-    """Persistent calendar notification dedupe (survives restart)."""
-
     __tablename__ = "calendar_alerts"
     __table_args__ = (UniqueConstraint("event_id", "alert_kind", name="uq_cal_event_kind"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[str] = mapped_column(String(128), index=True)
-    alert_kind: Mapped[str] = mapped_column(String(32))  # pre15 | actual
+    alert_kind: Mapped[str] = mapped_column(String(32))
     title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AnalyzedNews(Base):
-    """Unified news + analysis cache for Telegram and Mini App API."""
-
     __tablename__ = "analyzed_news"
     __table_args__ = (UniqueConstraint("news_id", name="uq_analyzed_news_id"),)
 
@@ -103,7 +99,7 @@ class AnalyzedNews(Base):
     confidence: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     analysis_ru: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     impact: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    method: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # openai | rule-based | unavailable
+    method: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
@@ -113,9 +109,49 @@ engine = create_async_engine(settings.database_url, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def init_db() -> None:
+async def _column_exists(conn, table: str, column: str) -> bool:
+    # SQLite PRAGMA
+    result = await conn.execute(text(f"PRAGMA table_info({table})"))
+    rows = result.fetchall()
+    cols = {r[1] for r in rows}  # name is index 1
+    return column in cols
+
+
+async def migrate_schema() -> None:
+    """Idempotent schema upgrades without dropping data."""
     async with engine.begin() as conn:
+        # Ensure base tables exist
         await conn.run_sync(Base.metadata.create_all)
+
+        # user_settings.notifications_enabled
+        try:
+            # Only apply PRAGMA path for SQLite
+            url = str(engine.url)
+            if "sqlite" in url:
+                exists = await _column_exists(conn, "user_settings", "notifications_enabled")
+                if not exists:
+                    logger.info("Migrating: ADD user_settings.notifications_enabled DEFAULT 1")
+                    await conn.execute(
+                        text(
+                            "ALTER TABLE user_settings "
+                            "ADD COLUMN notifications_enabled BOOLEAN DEFAULT 1 NOT NULL"
+                        )
+                    )
+                    # Explicitly set TRUE for any existing NULL rows (safety)
+                    await conn.execute(
+                        text(
+                            "UPDATE user_settings SET notifications_enabled = 1 "
+                            "WHERE notifications_enabled IS NULL"
+                        )
+                    )
+                    logger.info("Migration complete: notifications_enabled")
+        except Exception as e:
+            logger.error(f"migrate_schema error: {e}")
+            raise
+
+
+async def init_db() -> None:
+    await migrate_schema()
 
 
 async def get_session() -> AsyncSession:
