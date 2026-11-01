@@ -1,4 +1,4 @@
-"""Macro Alert backend API — shared news, calendar, settings for Mini App.
+"""Macro Alert backend API.
 Run: uvicorn api.app:app --host 0.0.0.0 --port 8000
 """
 from __future__ import annotations
@@ -6,9 +6,9 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -25,21 +25,33 @@ from bot.services.news_intelligence.publisher import (
 )
 
 settings = get_settings()
-app = FastAPI(title="Macro Alert API", version="1.0.0")
+app = FastAPI(title="Macro Alert API", version="1.1.0")
 
-# CORS allowlist — set CORS_ORIGINS env comma-separated; default permissive for Mini App
-_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+# Explicit CORS — never default to * in production if CORS_ORIGINS set
+_raw = os.getenv("CORS_ORIGINS", "").strip()
+if not _raw:
+    # Dev fallback: Telegram WebView origins + localhost
+    _origins = [
+        "https://web.telegram.org",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+else:
+    _origins = [o.strip() for o in _raw.split(",") if o.strip()]
+    for o in _origins:
+        if o != "*" and not (o.startswith("https://") or o.startswith("http://localhost") or o.startswith("http://127.0.0.1")):
+            raise RuntimeError(f"Invalid CORS origin (must be https or localhost): {o}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins or ["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["GET", "PATCH", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "X-Telegram-Init-Data"],
 )
 
-# Simple in-memory rate limit: user_id -> timestamps
 _rate: Dict[int, List[float]] = defaultdict(list)
-RATE_LIMIT = 60  # requests per minute
+RATE_LIMIT = 60
 
 
 def _rate_check(uid: int) -> None:
@@ -100,15 +112,10 @@ async def me(user: TelegramUser = Depends(require_user)):
 @app.get("/api/me/settings")
 async def get_settings_api(user: TelegramUser = Depends(require_user)):
     async with async_session() as session:
-        r = await session.execute(
-            select(UserSettings).where(UserSettings.user_id == user.id)
-        )
+        r = await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))
         row = r.scalar_one_or_none()
         if not row:
-            row = UserSettings(
-                user_id=user.id,
-                subscribed_assets={k: True for k in ASSETS.keys()},
-            )
+            row = UserSettings(user_id=user.id, subscribed_assets={k: True for k in ASSETS.keys()})
             session.add(row)
             await session.commit()
             await session.refresh(row)
@@ -125,9 +132,7 @@ async def get_settings_api(user: TelegramUser = Depends(require_user)):
 @app.patch("/api/me/settings")
 async def patch_settings(body: SettingsPatch, user: TelegramUser = Depends(require_user)):
     async with async_session() as session:
-        r = await session.execute(
-            select(UserSettings).where(UserSettings.user_id == user.id)
-        )
+        r = await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))
         row = r.scalar_one_or_none()
         if not row:
             row = UserSettings(user_id=user.id, subscribed_assets={k: True for k in ASSETS.keys()})
@@ -137,7 +142,6 @@ async def patch_settings(body: SettingsPatch, user: TelegramUser = Depends(requi
         if body.timezone is not None:
             row.timezone = body.timezone[:64]
         if body.subscribed_assets is not None:
-            # only known asset keys
             clean = {k: bool(v) for k, v in body.subscribed_assets.items() if k in ASSETS}
             row.subscribed_assets = clean
         if body.only_high_impact is not None:
@@ -191,12 +195,7 @@ async def api_news(
 async def api_categories(user: TelegramUser = Depends(require_user)):
     return {
         "categories": [
-            {
-                "id": k,
-                "emoji": v.get("emoji"),
-                "name_ru": v.get("name_ru"),
-                "name_en": v.get("name_en"),
-            }
+            {"id": k, "emoji": v.get("emoji"), "name_ru": v.get("name_ru"), "name_en": v.get("name_en")}
             for k, v in CATEGORIES.items()
         ]
     }
@@ -238,9 +237,9 @@ async def market_status(user: TelegramUser = Depends(require_user)):
                 "key": k,
                 "name": v.get("name_en"),
                 "status": "live" if k in ("btc", "eth") else "limited",
-                "source": "Binance" if k in ("btc", "eth") else (
-                    "FX spot" if k in ("eurusd", "gbpusd", "usdjpy") else "unavailable"
-                ),
+                "source": "Binance"
+                if k in ("btc", "eth")
+                else ("FX spot" if k in ("eurusd", "gbpusd", "usdjpy") else "unavailable"),
             }
             for k, v in ASSETS.items()
         ]

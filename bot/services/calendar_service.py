@@ -50,6 +50,13 @@ def _parse_event_dt(date_str: str) -> Optional[datetime]:
         return None
 
 
+def _has_actual(value) -> bool:
+    if value is None:
+        return False
+    s = str(value).strip()
+    return bool(s) and s not in ("—", "-", "n/a", "N/A", "")
+
+
 async def _fetch_pipatlas() -> list:
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -122,7 +129,6 @@ async def _fetch_fmp(start: datetime, end: datetime) -> list:
 
 
 async def fetch_calendar_raw() -> list:
-    """Shared raw events for bot + API."""
     raw = await _fetch_faireconomy()
     if not raw:
         raw = await _fetch_pipatlas()
@@ -137,7 +143,6 @@ async def get_calendar_events(
     timezone: str = "Europe/Moscow",
     lang: str = "ru",
 ) -> List[str]:
-    """Formatted Telegram strings — all dynamic fields escaped."""
     tz = pytz.timezone(timezone)
     now = datetime.now(tz)
 
@@ -230,7 +235,7 @@ async def _mark_alerted(event_id: str, kind: str, title: str) -> None:
 
 
 async def poll_calendar(bot) -> None:
-    """15-min pre-alerts for high-impact events; persistent dedupe."""
+    """15-min pre-alerts + actual-release alerts. Mark only after successful delivery."""
     logger.debug("Calendar poll tick")
     try:
         from bot.services.alert_service import send_alert_to_user
@@ -242,11 +247,46 @@ async def poll_calendar(bot) -> None:
         now_utc = datetime.now(pytz.UTC)
         for e in raw:
             impact = str(e.get("impact") or "").lower()
-            if impact not in ("high", "red"):
-                continue
             name = e.get("name") or e.get("title") or ""
             date_str = e.get("date") or ""
             currency = e.get("currency") or e.get("country") or ""
+            if not name:
+                continue
+
+            eid = stable_event_id(name, date_str, currency)
+            actual = e.get("actual")
+            forecast = e.get("forecast") or e.get("estimate") or "—"
+            previous = e.get("previous") or "—"
+
+            # --- Actual release (high impact only) ---
+            if impact in ("high", "red") and _has_actual(actual):
+                if not await _already_alerted(eid, "actual"):
+                    text = (
+                        f"📢 <b>Actual released</b>\n"
+                        f"⭐️⭐️⭐️ <b>{_e(currency)}</b> | {_e(name)}\n"
+                        f"🕒 {_e(date_str)}\n"
+                        f"Actual: <code>{_e(actual)}</code>  "
+                        f"Forecast: <code>{_e(forecast)}</code>  "
+                        f"Prev: <code>{_e(previous)}</code>\n"
+                        f"<i>Сравнение с прогнозом показано как есть. "
+                        f"Рыночная реакция не выдумана.</i>"
+                    )
+                    ok = await send_alert_to_user(
+                        bot,
+                        alert_type="calendar_actual",
+                        title=f"Actual: {name}"[:200],
+                        body=text,
+                        asset_tags=currency,
+                        importance="high",
+                        raw_data={"event_id": eid, "actual": str(actual)},
+                    )
+                    if ok:
+                        await _mark_alerted(eid, "actual", name)
+                        logger.info(f"Calendar actual alert: {name}")
+
+            # --- 15-min pre-alert ---
+            if impact not in ("high", "red"):
+                continue
             dt = _parse_event_dt(date_str)
             if not dt:
                 continue
@@ -258,8 +298,6 @@ async def poll_calendar(bot) -> None:
             delta = (dt - now_utc).total_seconds()
             if not (14 * 60 <= delta <= 16 * 60):
                 continue
-
-            eid = stable_event_id(name, date_str, currency)
             if await _already_alerted(eid, "pre15"):
                 continue
 
@@ -267,22 +305,20 @@ async def poll_calendar(bot) -> None:
                 f"⏰ <b>15 мин до события</b>\n"
                 f"⭐️⭐️⭐️ <b>{_e(currency)}</b> | {_e(name)}\n"
                 f"🕒 {_e(date_str)}\n"
-                f"Forecast: <code>{_e(e.get('forecast') or '—')}</code>  "
-                f"Prev: <code>{_e(e.get('previous') or '—')}</code>"
+                f"Forecast: <code>{_e(forecast)}</code>  "
+                f"Prev: <code>{_e(previous)}</code>"
             )
-            try:
-                await send_alert_to_user(
-                    bot,
-                    alert_type="calendar_pre15",
-                    title=f"15m: {name}"[:200],
-                    body=text,
-                    asset_tags=currency,
-                    importance="high",
-                    raw_data={"event_id": eid, "date": date_str},
-                )
+            ok = await send_alert_to_user(
+                bot,
+                alert_type="calendar_pre15",
+                title=f"15m: {name}"[:200],
+                body=text,
+                asset_tags=currency,
+                importance="high",
+                raw_data={"event_id": eid, "date": date_str},
+            )
+            if ok:
                 await _mark_alerted(eid, "pre15", name)
                 logger.info(f"Calendar pre-alert: {name}")
-            except Exception as ex:
-                logger.error(f"Calendar alert send error: {ex}")
     except Exception as e:
         logger.error(f"poll_calendar error: {e}")
