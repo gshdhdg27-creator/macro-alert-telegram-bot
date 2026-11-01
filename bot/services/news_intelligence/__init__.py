@@ -1,1 +1,1 @@
-"""Trading AI News Intelligence package."""
+# news intelligence package
