@@ -33,7 +33,7 @@ body{font-family:Inter,system-ui,sans-serif;background:#0b0e11;color:#eaecef}
 <div id="app-main" class="min-h-screen pb-20">
 <header class="sticky top-0 z-40 bg-[#0b0e11]/95 border-b border-[#1e2329] px-3 py-2.5 flex justify-between items-center">
 <div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-[#f0b90b] flex items-center justify-center text-[#0b0e11] font-bold text-sm">M</div>
-<div><div class="text-sm font-semibold">Macro Alert</div><div class="text-[10px] text-[#848e9c]">AI News · Charts · FF</div></div></div>
+<div><div class="text-sm font-semibold">Macro Alert</div><div class="text-[10px] text-[#848e9c]">AI News · Charts · Calendar</div></div></div>
 <button id="btn-notif" onclick="toggleNotif()" class="text-xs px-2 py-1 border border-[#1e2329] rounded text-[#848e9c]">🔔</button>
 </header>
 <div class="px-3 pt-3">
@@ -63,7 +63,7 @@ body{font-family:Inter,system-ui,sans-serif;background:#0b0e11;color:#eaecef}
 </div>
 <div class="flex gap-1 mb-3 bg-[#12161c] rounded-lg p-0.5">
 <button onclick="setNewsMode('ai')" id="nm-ai" class="tab-on flex-1 py-2 rounded-md text-xs">AI News</button>
-<button onclick="setNewsMode('calendar')" id="nm-calendar" class="flex-1 py-2 rounded-md text-xs text-[#848e9c]">Calendar FF</button>
+<button onclick="setNewsMode('calendar')" id="nm-calendar" class="flex-1 py-2 rounded-md text-xs text-[#848e9c]">Calendar</button>
 </div>
 <div class="flex justify-between mb-2 items-center">
 <div><div class="text-sm font-semibold" id="news-title">Market News</div><div class="text-[10px] text-[#848e9c]" id="news-updated">…</div></div>
@@ -87,6 +87,7 @@ body{font-family:Inter,system-ui,sans-serif;background:#0b0e11;color:#eaecef}
 <button onclick="toggleNotif()" id="btn-notif2" class="text-xs text-[#0ecb81]">ON</button></div>
 <div class="text-[10px] text-[#848e9c] mb-2">Подписки на активы</div>
 <div id="subscribe-chips" class="flex flex-wrap gap-1.5"></div>
+<p id="settings-sync-status" class="text-[10px] text-[#848e9c] mt-3"></p>
 </div>
 </div></div>
 <div id="app-news-detail" class="hidden fixed inset-0 z-50 bg-[#0b0e11]">
@@ -126,6 +127,11 @@ body{font-family:Inter,system-ui,sans-serif;background:#0b0e11;color:#eaecef}
 </div></div>
 <div class="pb-6"><div id="chart-wrap"></div></div>
 </div>
+<script>
+/* Production: set your API base (HTTPS). Leave empty to show unavailable for news/settings server features. */
+window.MACRO_API_BASE = window.MACRO_API_BASE || '';
+</script>
+<script src="js/api.js"></script>
 <script src="js/core.js"></script>
 <script src="js/news.js"></script>
 <script src="js/charts.js"></script>
