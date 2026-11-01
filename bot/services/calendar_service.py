@@ -1,15 +1,31 @@
-"""Economic calendar — real data only (pipatlas / faireconomy / FMP). No placeholders."""
+"""Economic calendar — real data only. HTML-escaped Telegram output. DB-backed alert dedupe."""
+from __future__ import annotations
+
+import hashlib
+import html
 from datetime import datetime, timedelta
 from typing import List, Optional
 
 import httpx
-from loguru import logger
 import pytz
+from loguru import logger
+from sqlalchemy import select
 
 from bot.config import get_settings
+from bot.models.db import CalendarAlert, async_session
 
 settings = get_settings()
-_alerted_events: set[str] = set()
+
+
+def _e(s) -> str:
+    if s is None:
+        return ""
+    return html.escape(str(s), quote=True)
+
+
+def stable_event_id(name: str, date_str: str, currency: str = "") -> str:
+    raw = f"{name.strip()}|{date_str.strip()}|{currency.strip()}".lower()
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
 def _parse_event_dt(date_str: str) -> Optional[datetime]:
@@ -22,7 +38,6 @@ def _parse_event_dt(date_str: str) -> Optional[datetime]:
         "%Y-%m-%d",
     ):
         try:
-            # handle trailing timezone like -04:00
             s = date_str.replace("Z", "+00:00")
             if fmt.endswith("%z") and len(s) >= 6 and s[-3] == ":":
                 s = s[:-3] + s[-2:]
@@ -41,7 +56,10 @@ async def _fetch_pipatlas() -> list:
             r = await client.get("https://pipatlas.com/api/calendar")
             if r.status_code == 200:
                 data = r.json()
-                return data.get("events") or data or []
+                events = data.get("events") or data or []
+                for e in events:
+                    e["_provider"] = "pipatlas"
+                return events
     except Exception as e:
         logger.warning(f"pipatlas calendar: {e}")
     return []
@@ -63,6 +81,7 @@ async def _fetch_faireconomy() -> list:
                             "forecast": e.get("forecast") or "",
                             "previous": e.get("previous") or "",
                             "actual": e.get("actual") or "",
+                            "_provider": "faireconomy/FF feed",
                         }
                         for e in data
                     ]
@@ -93,6 +112,7 @@ async def _fetch_fmp(start: datetime, end: datetime) -> list:
                         "forecast": item.get("estimate") or "",
                         "previous": item.get("previous") or "",
                         "actual": item.get("actual") or "",
+                        "_provider": "FMP",
                     }
                     for item in (data or [])
                 ]
@@ -101,16 +121,23 @@ async def _fetch_fmp(start: datetime, end: datetime) -> list:
     return []
 
 
+async def fetch_calendar_raw() -> list:
+    """Shared raw events for bot + API."""
+    raw = await _fetch_faireconomy()
+    if not raw:
+        raw = await _fetch_pipatlas()
+    if not raw:
+        now = datetime.utcnow()
+        raw = await _fetch_fmp(now, now + timedelta(days=7))
+    return raw
+
+
 async def get_calendar_events(
     period: str = "today",
     timezone: str = "Europe/Moscow",
     lang: str = "ru",
 ) -> List[str]:
-    """
-    Fetch real economic calendar events.
-    Returns formatted Telegram strings, or a clear unavailable message.
-    Never returns invented placeholder events.
-    """
+    """Formatted Telegram strings — all dynamic fields escaped."""
     tz = pytz.timezone(timezone)
     now = datetime.now(tz)
 
@@ -124,17 +151,11 @@ async def get_calendar_events(
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=7)
 
-    raw: list = []
-    raw = await _fetch_pipatlas()
-    if not raw:
-        raw = await _fetch_faireconomy()
-    if not raw:
-        raw = await _fetch_fmp(start, end)
-
+    raw = await fetch_calendar_raw()
     if not raw:
         return [
             "⚠️ <b>Календарь временно недоступен</b>\n"
-            "Источники Forex Factory / pipatlas не ответили.\n"
+            "Источники не ответили.\n"
             "Попробуйте позже. Демо-события не показываются."
         ]
 
@@ -145,17 +166,14 @@ async def get_calendar_events(
             continue
         date_str = e.get("date") or ""
         dt = _parse_event_dt(date_str)
-        # filter by period when we can parse the date
         if dt is not None:
             try:
                 if dt.tzinfo is None:
                     dt_local = tz.localize(dt)
                 else:
                     dt_local = dt.astimezone(tz)
-                if not (start <= dt_local < end):
-                    # for week/today we still include if date parsing is ambiguous
-                    if period in ("today", "tomorrow"):
-                        continue
+                if period in ("today", "tomorrow") and not (start <= dt_local < end):
+                    continue
             except Exception:
                 pass
 
@@ -164,6 +182,7 @@ async def get_calendar_events(
         actual = e.get("actual") or "—"
         forecast = e.get("forecast") or e.get("estimate") or "—"
         previous = e.get("previous") or "—"
+        provider = e.get("_provider") or "calendar"
 
         stars = (
             "⭐️⭐️⭐️"
@@ -172,31 +191,51 @@ async def get_calendar_events(
             if str(impact).lower() in ("medium", "orange", "med")
             else "⭐️"
         )
-        line = f"{stars} <b>{currency}</b> | {name}\n"
-        line += f"🕒 {date_str}\n"
+        line = f"{stars} <b>{_e(currency)}</b> | {_e(name)}\n"
+        line += f"🕒 {_e(date_str)} · {_e(provider)}\n"
         line += (
-            f"Actual: <code>{actual}</code>  "
-            f"Forecast: <code>{forecast}</code>  "
-            f"Prev: <code>{previous}</code>"
+            f"Actual: <code>{_e(actual)}</code>  "
+            f"Forecast: <code>{_e(forecast)}</code>  "
+            f"Prev: <code>{_e(previous)}</code>"
         )
         events.append(line)
 
     if not events:
         return [
-            f"На период «{period}» подтверждённых событий в источниках нет.\n"
+            f"На период «{_e(period)}» подтверждённых событий нет.\n"
             "Это не ошибка — список пуст по реальным данным."
         ]
-
     return events[:50]
 
 
+async def _already_alerted(event_id: str, kind: str) -> bool:
+    async with async_session() as session:
+        r = await session.execute(
+            select(CalendarAlert.id).where(
+                CalendarAlert.event_id == event_id,
+                CalendarAlert.alert_kind == kind,
+            ).limit(1)
+        )
+        return r.scalar_one_or_none() is not None
+
+
+async def _mark_alerted(event_id: str, kind: str, title: str) -> None:
+    async with async_session() as session:
+        try:
+            session.add(CalendarAlert(event_id=event_id, alert_kind=kind, title=(title or "")[:500]))
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.warning(f"calendar dedupe mark failed: {e}")
+
+
 async def poll_calendar(bot) -> None:
-    """Background: 15-min pre-alerts for high-impact events (real data only)."""
+    """15-min pre-alerts for high-impact events; persistent dedupe."""
     logger.debug("Calendar poll tick")
     try:
-        raw = await _fetch_pipatlas()
-        if not raw:
-            raw = await _fetch_faireconomy()
+        from bot.services.alert_service import send_alert_to_user
+
+        raw = await fetch_calendar_raw()
         if not raw:
             return
 
@@ -207,6 +246,7 @@ async def poll_calendar(bot) -> None:
                 continue
             name = e.get("name") or e.get("title") or ""
             date_str = e.get("date") or ""
+            currency = e.get("currency") or e.get("country") or ""
             dt = _parse_event_dt(date_str)
             if not dt:
                 continue
@@ -216,28 +256,33 @@ async def poll_calendar(bot) -> None:
                 dt = dt.astimezone(pytz.UTC)
 
             delta = (dt - now_utc).total_seconds()
-            # 15-min window: between 14 and 16 minutes before
-            if 14 * 60 <= delta <= 16 * 60:
-                key = f"{name}|{date_str}"
-                if key in _alerted_events:
-                    continue
-                _alerted_events.add(key)
-                currency = e.get("currency") or ""
-                text = (
-                    f"⏰ <b>15 мин до события</b>\n"
-                    f"⭐️⭐️⭐️ <b>{currency}</b> | {name}\n"
-                    f"🕒 {date_str}\n"
-                    f"Forecast: <code>{e.get('forecast') or '—'}</code>  "
-                    f"Prev: <code>{e.get('previous') or '—'}</code>"
+            if not (14 * 60 <= delta <= 16 * 60):
+                continue
+
+            eid = stable_event_id(name, date_str, currency)
+            if await _already_alerted(eid, "pre15"):
+                continue
+
+            text = (
+                f"⏰ <b>15 мин до события</b>\n"
+                f"⭐️⭐️⭐️ <b>{_e(currency)}</b> | {_e(name)}\n"
+                f"🕒 {_e(date_str)}\n"
+                f"Forecast: <code>{_e(e.get('forecast') or '—')}</code>  "
+                f"Prev: <code>{_e(e.get('previous') or '—')}</code>"
+            )
+            try:
+                await send_alert_to_user(
+                    bot,
+                    alert_type="calendar_pre15",
+                    title=f"15m: {name}"[:200],
+                    body=text,
+                    asset_tags=currency,
+                    importance="high",
+                    raw_data={"event_id": eid, "date": date_str},
                 )
-                try:
-                    await bot.send_message(
-                        chat_id=settings.admin_id,
-                        text=text,
-                        parse_mode="HTML",
-                    )
-                    logger.info(f"Calendar pre-alert: {name}")
-                except Exception as ex:
-                    logger.error(f"Calendar alert send error: {ex}")
+                await _mark_alerted(eid, "pre15", name)
+                logger.info(f"Calendar pre-alert: {name}")
+            except Exception as ex:
+                logger.error(f"Calendar alert send error: {ex}")
     except Exception as e:
         logger.error(f"poll_calendar error: {e}")

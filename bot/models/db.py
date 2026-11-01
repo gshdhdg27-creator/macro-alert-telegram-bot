@@ -32,6 +32,7 @@ class UserSettings(Base):
     subscribed_assets: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     only_high_impact: Mapped[bool] = mapped_column(Boolean, default=False)
     quiet_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -54,7 +55,7 @@ class AlertHistory(Base):
 
 
 class PublishedNews(Base):
-    """Persistent deduplication — survives bot restarts."""
+    """Telegram publish deduplication."""
 
     __tablename__ = "published_news"
     __table_args__ = (UniqueConstraint("news_id", name="uq_published_news_id"),)
@@ -66,6 +67,45 @@ class PublishedNews(Base):
     link: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     category: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class CalendarAlert(Base):
+    """Persistent calendar notification dedupe (survives restart)."""
+
+    __tablename__ = "calendar_alerts"
+    __table_args__ = (UniqueConstraint("event_id", "alert_kind", name="uq_cal_event_kind"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(128), index=True)
+    alert_kind: Mapped[str] = mapped_column(String(32))  # pre15 | actual
+    title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AnalyzedNews(Base):
+    """Unified news + analysis cache for Telegram and Mini App API."""
+
+    __tablename__ = "analyzed_news"
+    __table_args__ = (UniqueConstraint("news_id", name="uq_analyzed_news_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    news_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    link: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    image: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    assets: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    importance: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    bias: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    confidence: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    analysis_ru: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    impact: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    method: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # openai | rule-based | unavailable
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 settings = get_settings()
