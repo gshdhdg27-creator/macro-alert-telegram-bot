@@ -67,12 +67,23 @@ async def client(monkeypatch, tmp_path):
     dbmod.async_session = async_sessionmaker(dbmod.engine, class_=AsyncSession, expire_on_commit=False)
     await dbmod.init_db()
 
-    # Import app after env/CORS is set — reload origins by patching module list
     import api.app as app_mod
+    from bot.services.news_intelligence import publisher as pub_mod
+    from bot.services import calendar_service as cal_mod
 
     monkeypatch.setattr(app_mod, "settings", S())
     monkeypatch.setattr(app_mod, "async_session", dbmod.async_session)
-    # CORS already loaded at import; testserver is in default list after fix
+    monkeypatch.setattr(pub_mod, "async_session", dbmod.async_session)
+    monkeypatch.setattr(cal_mod, "async_session", dbmod.async_session)
+
+    async def _empty_cal():
+        return []
+
+    async def _empty_news(*a, **k):
+        return []
+
+    monkeypatch.setattr(app_mod, "fetch_calendar_raw", _empty_cal)
+    monkeypatch.setattr(app_mod, "list_analyzed_news", _empty_news)
 
     transport = ASGITransport(app=app_mod.app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
@@ -146,6 +157,6 @@ async def test_news_and_calendar_auth(client):
     h = {"X-Telegram-Init-Data": init}
     for path in ("/api/news", "/api/news/categories", "/api/calendar", "/api/market/status"):
         r = await client.get(path, headers=h)
-        assert r.status_code == 200, path
+        assert r.status_code == 200, f"{path} -> {r.status_code} {r.text}"
         r401 = await client.get(path)
         assert r401.status_code == 401, path
