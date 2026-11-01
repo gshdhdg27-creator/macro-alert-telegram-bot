@@ -1,17 +1,37 @@
-"""Calendar HTML escaping and stable event ids."""
+"""Calendar HTML escaping — security properties, not substring bans."""
 import html
 
 from bot.services.calendar_service import _e, stable_event_id
 
 
-def test_escape_script():
-    assert _e("<script>alert(1)</script>") == html.escape("<script>alert(1)</script>", quote=True)
-    assert "<script>" not in _e("<script>")
-    assert "&lt;" in _e("<b>")
+def test_escape_script_tags():
+    escaped = _e("<script>alert(1)</script>")
+    assert "<script>" not in escaped
+    assert "&lt;script&gt;" in escaped
+    assert escaped == html.escape("<script>alert(1)</script>", quote=True)
 
 
 def test_escape_amp():
     assert "&amp;" in _e("A & B")
+
+
+def test_escape_quotes_for_attributes():
+    escaped = _e('USD" onclick="x')
+    assert '"' not in escaped or "&quot;" in escaped
+    assert "&quot;" in escaped
+
+
+def test_img_onerror_not_executable_markup():
+    name = '<img src=x onerror=alert(1)>'
+    currency = 'USD" onclick="evil'
+    line = f"⭐️ <b>{_e(currency)}</b> | {_e(name)}"
+    # No raw HTML tags from untrusted content
+    assert "<img" not in line
+    assert "&lt;img" in line
+    # Quotes escaped so attributes cannot break out of Telegram HTML
+    assert "&quot;" in line
+    # Word onerror may remain as text; that is safe once tags/quotes are escaped
+    assert line.count("<") == line.count("<b>") + line.count("</b>")  # only our markup
 
 
 def test_stable_event_id_consistent():
@@ -21,12 +41,3 @@ def test_stable_event_id_consistent():
     assert a == b
     assert a != c
     assert len(a) == 32
-
-
-def test_malicious_event_line_safe():
-    name = '<img src=x onerror=alert(1)>'
-    currency = 'USD" onclick="x'
-    line = f"⭐️ <b>{_e(currency)}</b> | {_e(name)}"
-    assert "<img" not in line
-    assert "onerror" not in line
-    assert "&lt;img" in line

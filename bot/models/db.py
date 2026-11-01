@@ -80,6 +80,18 @@ class CalendarAlert(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CalendarEventState(Base):
+    """Track last observed Actual so we only alert on missing→populated transitions."""
+
+    __tablename__ = "calendar_event_state"
+    __table_args__ = (UniqueConstraint("event_id", name="uq_cal_event_state"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(128), index=True)
+    last_actual: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AnalyzedNews(Base):
     __tablename__ = "analyzed_news"
     __table_args__ = (UniqueConstraint("news_id", name="uq_analyzed_news_id"),)
@@ -110,22 +122,16 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 
 async def _column_exists(conn, table: str, column: str) -> bool:
-    # SQLite PRAGMA
     result = await conn.execute(text(f"PRAGMA table_info({table})"))
     rows = result.fetchall()
-    cols = {r[1] for r in rows}  # name is index 1
+    cols = {r[1] for r in rows}
     return column in cols
 
 
 async def migrate_schema() -> None:
-    """Idempotent schema upgrades without dropping data."""
     async with engine.begin() as conn:
-        # Ensure base tables exist
         await conn.run_sync(Base.metadata.create_all)
-
-        # user_settings.notifications_enabled
         try:
-            # Only apply PRAGMA path for SQLite
             url = str(engine.url)
             if "sqlite" in url:
                 exists = await _column_exists(conn, "user_settings", "notifications_enabled")
@@ -137,14 +143,12 @@ async def migrate_schema() -> None:
                             "ADD COLUMN notifications_enabled BOOLEAN DEFAULT 1 NOT NULL"
                         )
                     )
-                    # Explicitly set TRUE for any existing NULL rows (safety)
                     await conn.execute(
                         text(
                             "UPDATE user_settings SET notifications_enabled = 1 "
                             "WHERE notifications_enabled IS NULL"
                         )
                     )
-                    logger.info("Migration complete: notifications_enabled")
         except Exception as e:
             logger.error(f"migrate_schema error: {e}")
             raise
